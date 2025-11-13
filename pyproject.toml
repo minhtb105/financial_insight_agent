@@ -1,0 +1,26 @@
+[project]
+name = "financial_insight_agent"
+version = "0.1.0"
+description = "An AI-powered question-answering agent that retrieves company information and historical stock data from vnstock, with support for SMA and RSI indicators through a REST API."
+authors = [
+    { name = "Minh Tran Binh", email = "kisuit4.0@gmail.com" }
+]
+readme = "README.md"
+requires-python = ">=3.8"
+
+dependencies = [
+    "langchain>=0.3.27",
+    "pandas>=2.3.3",
+    "numpy>=2.2.6",
+    "matplotlib>=3.10.7",
+    "tqdm>=4.67.1",
+    "requests>=2.30.5",
+    "fastapi>=0.121.1"
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
