@@ -1,3 +1,4 @@
 .venv/
 src/financial_insight_agent.egg-info/
 src/api_clients/__pycache__/
+.env
