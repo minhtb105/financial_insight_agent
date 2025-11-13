@@ -10,8 +10,10 @@ def get_company_info_tool(ticker: str) -> str:
     info = client.get_company_info(ticker)
     if not info:
         return f"Không tìm thấy thông tin cho mã {ticker}"
+    
     name = info.get("companyName", "")
     industry = info.get("industryName", "")
+    
     return f"Công ty {name} hoạt động trong lĩnh vực {industry}."
 
 @tool
