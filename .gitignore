@@ -3,3 +3,4 @@ src/financial_insight_agent.egg-info/
 src/api_clients/__pycache__/
 .env
 src/models/__pycache__/
+src/__pycache__/
