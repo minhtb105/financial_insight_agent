@@ -2,6 +2,7 @@ from langchain_groq import ChatGroq
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import PromptTemplate
 from models.historical_query import HistoricalQuery
+from langchain.tools import tool
 from datetime import datetime
 import re
 
@@ -132,4 +133,8 @@ class QueryParser:
         match = re.search(r"\{.*\}", text, re.DOTALL)
         
         return match.group(0) if match else text
+    
+    @tool("parse_stock_query", return_direct=True)
+    def parse_tool(self, query: str):
+        return self.parse(query)
     
