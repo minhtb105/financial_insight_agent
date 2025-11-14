@@ -1,8 +1,7 @@
 import os
 from dotenv import load_dotenv
-from langchain.agents import create_agent
-from langchain_core.prompts import PromptTemplate
 from langchain_groq import ChatGroq
+from langgraph.graph import StateGraph, END
 from langchain.tools import tool
 from llm_tools.nlp_parser import QueryParser
 from llm_tools.tools import (
@@ -15,58 +14,60 @@ from llm_tools.tools import (
     get_rsi_tool,
 )
 
+class State(dict):
+    pass
 
 class StockAgent:
-    def __init__(self, model: str = "llama-3.1-8b-instant"):
+    def __init__(self, model="llama-3.1-8b-instant"):
         load_dotenv()
         api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
-            raise ValueError("Thiếu GROQ_API_KEY trong .env")
 
-        # LLM
+        if not api_key:
+            raise ValueError("Missing GROQ_API_KEY")
+
         self.llm = ChatGroq(model=model, temperature=0, api_key=api_key)
 
-        self.parser = QueryParser(model=model)
-        
-        self.tools = [self.parser.parse_tool, get_company_info_tool, get_ohlcv_tool, 
-                    get_price_stat_tool, get_aggregate_volume_tool, 
-                    compare_volume_tool, get_sma_tool, get_rsi_tool]
+        # Tools
+        parser = QueryParser(model=model)
 
-           # ─────────────────────────────
-        # Prompt chuẩn cho ReAct agent
-        # ─────────────────────────────
-        template = """
-            Bạn là một assistant phân tích chứng khoán. 
-            Bạn sẽ sử dụng tools khi cần thiết để trả lời truy vấn của người dùng.
+        self.tools = [
+            parser.parse_tool,
+            get_company_info_tool,
+            get_ohlcv_tool,
+            get_price_stat_tool,
+            get_aggregate_volume_tool,
+            compare_volume_tool,
+            get_sma_tool,
+            get_rsi_tool,
+        ]
 
-            Nếu câu hỏi liên quan đến phân tích chứng khoán (SMA, RSI, giá, volume, cổ đông, lãnh đạo...),
-            hãy gọi tool parse_stock_query trước.
+        # Convert to LangChain Tool format
+        lc_tools = [t for t in self.tools]
 
-            Sau khi có JSON schema, hãy chọn đúng tool và trả câu trả lời cuối cùng bằng tiếng Việt.
+        # Build graph
+        graph = StateGraph(State)
 
-            Dữ liệu vào: {input}
-        """
+        # LLM node
+        def llm_node(state: State):
+            response = self.llm.invoke(
+                f"""
+                Bạn là một agent chứng khoán Việt Nam.
+                Khi người dùng hỏi:
+                    1) Gọi tool parse_stock_query trước.
+                    2) Chọn tool đúng cho SMA/RSI/OHLCV/volume/company info.
+                    3) Trả lời tiếng Việt.
 
-        prompt = PromptTemplate.from_template(template)
+                Câu hỏi: {state["input"]}
+                """
+            )
+            return {"llm_output": response.content}
 
-        # ─────────────────────────────
-        # Tạo agent chuẩn LangChain
-        # ─────────────────────────────
-        self.agent = create_agent(
-            model=self.llm,
-            tools=self.tools,
-            prompt=prompt,
-        )
+        graph.add_node("llm", llm_node)
+        graph.set_entry_point("llm")
+        graph.add_edge("llm", END)
 
-    def run(self, query: str) -> str:
-        """
-        Chạy agent với truy vấn tự nhiên (tiếng Việt).
-        Agent sẽ:
-          1) Gọi parse_stock_query để nhận JSON HistoricalQuery
-          2) Quyết định tool phù hợp và gọi tool
-          3) Trả về text cuối
-        """
-        try:
-            return self.agent.run(query)
-        except Exception as e:
-            return f"Lỗi Agent: {e}"
+        self.app = graph.compile()
+
+    def run(self, query: str):
+        result = self.app.invoke({"input": query})
+        return result["llm_output"]
