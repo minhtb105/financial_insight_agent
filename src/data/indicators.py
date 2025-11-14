@@ -99,13 +99,19 @@ def get_rsi(query: dict):
 
 def get_company_info(query: dict):
     client = VNStockClient(ticker=query["tickers"][0])
-    info = client.company_info()
-    if query["requested_field"] == "shareholders":
-        return info.get("shareholders")
-    elif query["requested_field"] == "subsidiaries":
-        return info.get("subsidiaries")
-    elif query["requested_field"] == "executives":
-        return info.get("executives")
+    df = client.company_info()
+    
+    if df is None or df.empty:
+        return None
+
+    field = query.get("requested_field")
+    if field == "shareholders" and "shareholders" in df.columns:
+        return df["shareholders"].dropna().tolist()
+    elif field == "subsidiaries" and "subsidiaries" in df.columns:
+        return df["subsidiaries"].dropna().tolist()
+    elif field == "executives" and "executives" in df.columns:
+        return df["executives"].dropna().tolist()
     else:
-        return info
+        # Trả về toàn bộ DataFrame dưới dạng dict nếu không chỉ định trường cụ thể
+        return df.to_dict(orient="records")
     
