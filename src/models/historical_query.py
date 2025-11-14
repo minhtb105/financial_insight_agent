@@ -4,6 +4,11 @@ from models.intent import Intent, RequestedField
 
 
 class HistoricalQuery(BaseModel):
+    """
+    intent = historical_prices → required: tickers + requested_field in {ohlcv,open_price,...}
+    intent = technical_indicator → required: tickers + requested_field in {sma,rsi}
+    intent = company_info → required: tickers + requested_field in {executives,shareholders,subsidiaries}
+    """
     intent: Intent = Field(..., description="Action category (historical_prices / technical_indicator / company_info)")
     requested_field: Optional[RequestedField] = Field(
         None,

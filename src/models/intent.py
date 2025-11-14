@@ -14,20 +14,20 @@ class Intent(str, Enum):
 
 class RequestedField(str, Enum):
     # Historical price fields
-    close_price = "close_price"
-    open_price = "open_price"
-    high_price = "high_price"
-    low_price = "low_price"
-    ohlcv = "ohlcv"
-    volume = "volume"
+    open_price = "open_price"       # Giá mở cửa
+    close_price = "close_price"     # Giá đóng cửa
+    high_price = "high_price"       # Giá cao nhất
+    low_price = "low_price"         # Giá thấp nhất
+    volume = "volume"               # Khối lượng giao dịch
+    ohlcv = "ohlcv"                 # Giá trị OHLCV đầy đủ
 
     # Technical indicators
-    sma = "sma" # SMA window
-    rsi = "rsi" # RSI window
-    macd = "macd" # MACD
+    sma = "sma" # Chỉ báo SMA
+    rsi = "rsi" # Chỉ báo RSI
+    macd = "macd" # Chỉ báo MACD
 
     # Company data
-    shareholders = "shareholders"
-    subsidiaries = "subsidiaries"
-    executives = "executives"
+    shareholders = "shareholders" # Danh sách cổ đông lớn
+    subsidiaries = "subsidiaries" # Danh sách ban lãnh đạo
+    executives = "executives" # Danh sách công ty con
     
