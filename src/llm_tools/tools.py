@@ -8,14 +8,16 @@ from data.indicators import (
     get_sma,
     get_rsi,
 )
+from typing import Dict, Any, Optional
 
 
-@tool
-def get_company_info_tool(query: dict) -> str:
+@tool("get_company_info", return_direct=True)
+def get_company_info_tool(query: Dict[str, Any]) -> str:
     """Lấy thông tin công ty theo schema query."""
-    info = get_company_info(query)
-    if not info:
-        return f"Không tìm thấy thông tin cho mã {query.get('tickers', [''])[0]}"
+    try:
+        info = get_company_info(query)
+    except Exception as e:
+        return f"❌ Lỗi khi lấy thông tin công ty: {e}"
     
     # Tuỳ thuộc vào requested_field, info có thể là shareholders, executives, subsidiaries...
     if isinstance(info, list):
@@ -23,57 +25,110 @@ def get_company_info_tool(query: dict) -> str:
     
     return str(info)
 
-@tool
-def get_ohlcv_tool(query: dict) -> str:
+@tool("get_ohlcv", return_direct=True)
+def get_ohlcv_tool(query: Dict[str, Any]) -> str:
     """Lấy dữ liệu OHLCV theo schema query."""
-    df = get_ohlcv(query)
+    try:
+        df = get_ohlcv(query)
+    except Exception as e:
+        return f"Lỗi khi lấy OHLCV: {e}"
+
     if df is None or df.empty:
         return "Không có dữ liệu OHLCV."
-            
-    return df.tail(5).to_string(index=False)
 
-@tool
-def get_price_stat_tool(query: dict, stat: str) -> str:
+    try:
+        return df.tail(5).to_string(index=False)
+    except Exception:
+        return df.to_string(index=False)
+
+
+@tool("get_price_stat", return_direct=True)
+def get_price_stat_tool(query: Dict[str, Any]) -> str:
     """Lấy giá trị thống kê (min/max/mean) cho trường giá."""
-    val = get_price_stat(query, stat)
-    
+    try:
+        stat = query.get("aggregate")
+        if stat is None:
+            return "Thiếu thông tin aggregate (min/max/mean)."
+
+        val = get_price_stat(query, stat)
+    except Exception as e:
+        return f"Lỗi khi tính thống kê giá: {e}"
+
     if val is None:
         return "Không có dữ liệu thống kê."
     
-    return f"{stat} {query.get('requested_field', '')}: {val}"
+    if isinstance(val, float):
+        return f"{stat}: {round(val, 2)}"
+    
+    return f"{stat}: {val}"
 
-@tool
-def get_aggregate_volume_tool(query: dict) -> str:
+@tool("get_aggregate_volume", return_direct=True)
+def get_aggregate_volume_tool(query: Dict[str, Any]) -> str:
     """Tính tổng khối lượng giao dịch."""
-    val = get_aggregate_volume(query)
+    try:
+        val = get_aggregate_volume(query)
+    except Exception as e:
+        return f"❌ Lỗi khi tính tổng volume: {e}"
+
     if val is None:
         return "Không có dữ liệu khối lượng."
     
-    return f"Tổng khối lượng: {val}"
+    return f"Tổng khối lượng: {int(val)}"
 
-@tool
-def compare_volume_tool(query: dict) -> str:
+@tool("compare_volume", return_direct=True)
+def compare_volume_tool(query: Dict[str, Any]) -> str:
     """So sánh khối lượng giao dịch giữa các mã."""
-    result = compare_volume(query)
+    try:
+        result = compare_volume(query)
+    except Exception as e:
+        return f"Lỗi khi so sánh volume: {e}"
+
     if not result:
         return "Không có dữ liệu so sánh."
-    
-    return "\n".join(f"{ticker}: {vol}" for ticker, vol in result.items())
 
-@tool
+    lines = []
+    for ticker, vol in result.items():
+        lines.append(f"{ticker}: {int(vol)}")
+        
+    return "\n".join(lines)
+
+@tool("get_sma", return_direct=True)
 def get_sma_tool(query: dict) -> str:
     """Tính SMA cho mã cổ phiếu."""
-    result = get_sma(query)
+    try:
+        result = get_sma(query)
+    except Exception as e:
+        return f"Lỗi khi tính SMA: {e}"
+
     if not result:
         return "Không có dữ liệu SMA."
-    
-    return ", ".join(f"{k}: {v}" for k, v in result.items())
 
-@tool
-def get_rsi_tool(query: dict) -> str:
+    # Format: SMA9: 12.34, SMA20: 13.45
+    out = []
+    for k, v in result.items():
+        try:
+            out.append(f"{k}: {round(float(v), 2)}")
+        except Exception:
+            out.append(f"{k}: {v}")
+            
+    return ", ".join(out)
+
+@tool("get_rsi", return_direct=True)
+def get_rsi_tool(query: Dict[str, Any]) -> str:
     """Tính RSI cho mã cổ phiếu."""
-    result = get_rsi(query)
+    try:
+        result = get_rsi(query)
+    except Exception as e:
+        return f"Lỗi khi tính RSI: {e}"
+
     if not result:
         return "Không có dữ liệu RSI."
-    
-    return ", ".join(f"{k}: {v}" for k, v in result.items())
+
+    out = []
+    for k, v in result.items():
+        try:
+            out.append(f"{k}: {round(float(v), 2)}")
+        except Exception:
+            out.append(f"{k}: {v}")
+            
+    return ", ".join(out)
