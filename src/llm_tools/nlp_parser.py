@@ -29,6 +29,24 @@ class QueryParser:
                 Hôm nay là ngày: {today} 
                 (BẮT BUỘC phải dùng đúng ngày này khi tính toán thời gian.)
 
+                MAPPING requested_field (bắt buộc sử dụng chính xác các giá trị bên phải):
+                - "giá mở cửa", "mở cửa" -> open_price
+                - "giá đóng", "giá đóng cửa", "đóng cửa" -> close_price
+                - "giá cao nhất", "cao nhất" -> high_price
+                - "giá thấp nhất", "thấp nhất" -> low_price
+                - "khối lượng", "khối lượng giao dịch", "volume" -> volume
+                - "OHLCV", "toàn bộ giá", "toàn bộ OHLCV" -> ohlcv
+                
+                # Technical indicators mapping (map mọi dạng gọi tên sang chữ phía phải)
+                - "SMA", "sma", "sma9", "SMA9", "SMA-9", "sma20", "SMA20" -> sma
+                - "RSI", "rsi", "RSI14", "rsi14" -> rsi
+                - "MACD", "macd" -> macd
+
+                # Company data mapping
+                - "cổ đông lớn", "danh sách cổ đông", "shareholders" -> shareholders
+                - "công ty con", "các công ty con", "subsidiaries" -> subsidiaries
+                - "lãnh đạo", "ban lãnh đạo", "ban giám đốc", "giám đốc điều hành", "executives" -> executives
+
                 QUY TẮC BẮT BUỘC:
 
                 1) Nếu người dùng nói “X ngày qua”, “X ngày gần nhất”, “trong X ngày”, “10 ngày vừa rồi”…  
