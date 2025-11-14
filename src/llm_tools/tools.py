@@ -11,7 +11,7 @@ from data.indicators import (
 from typing import Dict, Any
 
 
-@tool("get_company_info", return_direct=True)
+@tool("get_company_info", description="Trả về thông tin cổ đông, lãnh đạo hoặc công ty con của mã cổ phiếu theo truy vấn.")
 def get_company_info_tool(query: Dict[str, Any]) -> str:
     """Lấy thông tin công ty theo schema query."""
     try:
@@ -25,7 +25,7 @@ def get_company_info_tool(query: Dict[str, Any]) -> str:
     
     return str(info)
 
-@tool("get_ohlcv", return_direct=True)
+@tool("get_ohlcv", description="Trả về dữ liệu OHLCV (giá mở cửa, đóng cửa, cao nhất, thấp nhất, khối lượng) cho mã cổ phiếu theo truy vấn.")
 def get_ohlcv_tool(query: Dict[str, Any]) -> str:
     """Lấy dữ liệu OHLCV theo schema query."""
     try:
@@ -42,7 +42,7 @@ def get_ohlcv_tool(query: Dict[str, Any]) -> str:
         return df.to_string(index=False)
 
 
-@tool("get_price_stat", return_direct=True)
+@tool("get_price_stat",  description="Tính toán giá trị min, max hoặc trung bình cho giá mở cửa hoặc đóng cửa của mã cổ phiếu.")
 def get_price_stat_tool(query: Dict[str, Any]) -> str:
     """Lấy giá trị thống kê (min/max/mean) cho trường giá."""
     try:
@@ -62,7 +62,7 @@ def get_price_stat_tool(query: Dict[str, Any]) -> str:
     
     return f"{stat}: {val}"
 
-@tool("get_aggregate_volume", return_direct=True)
+@tool("get_aggregate_volume", description="Tính tổng khối lượng giao dịch của mã cổ phiếu trong khoảng thời gian truy vấn.")
 def get_aggregate_volume_tool(query: Dict[str, Any]) -> str:
     """Tính tổng khối lượng giao dịch."""
     try:
@@ -75,7 +75,7 @@ def get_aggregate_volume_tool(query: Dict[str, Any]) -> str:
     
     return f"Tổng khối lượng: {int(val)}"
 
-@tool("compare_volume", return_direct=True)
+@tool("compare_volume", description="So sánh tổng khối lượng giao dịch giữa nhiều mã cổ phiếu trong cùng khoảng thời gian.")
 def compare_volume_tool(query: Dict[str, Any]) -> str:
     """So sánh khối lượng giao dịch giữa các mã."""
     try:
@@ -92,7 +92,7 @@ def compare_volume_tool(query: Dict[str, Any]) -> str:
         
     return "\n".join(lines)
 
-@tool("get_sma", return_direct=True)
+@tool("get_sma", description="Tính chỉ báo SMA (Simple Moving Average) cho mã cổ phiếu với các window size được chỉ định.")
 def get_sma_tool(query: dict) -> str:
     """Tính SMA cho mã cổ phiếu."""
     try:
@@ -113,7 +113,7 @@ def get_sma_tool(query: dict) -> str:
             
     return ", ".join(out)
 
-@tool("get_rsi", return_direct=True)
+@tool("get_rsi", description="Tính chỉ báo RSI (Relative Strength Index) cho mã cổ phiếu với các window size được chỉ định.")
 def get_rsi_tool(query: Dict[str, Any]) -> str:
     """Tính RSI cho mã cổ phiếu."""
     try:
