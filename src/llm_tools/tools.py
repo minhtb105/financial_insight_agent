@@ -8,7 +8,7 @@ from data.indicators import (
     get_sma,
     get_rsi,
 )
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 
 @tool("get_company_info", return_direct=True)
