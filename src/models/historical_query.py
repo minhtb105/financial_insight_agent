@@ -26,12 +26,11 @@ class HistoricalQuery(BaseModel):
     interval: Optional[str] = Field(None, description="Data interval e.g. '1m','5m','30m','1d'")
     
     # Technical indicator parameters
-    window_size: Optional[int] = Field(None, description="Window size for single indicator (e.g. 9 or 14)")
-    indicators: Optional[List[str]] = Field(None, description="List of indicators requested, e.g. ['SMA','SMA'] or ['RSI']")
-    indicator_params: Optional[Dict[str, Any]] = Field(None, description="Params per indicator, e.g. {'SMA':[9,20], 'RSI':14}")
+    indicators: Optional[List[str]] = Field(None, description="List of indicators requested, e.g. ['SMA','SMA'] or ['RSI'] or ['SMA'] or ['RSI']")
+    indicator_params: Optional[Dict[str, Any]] = Field(None, description="Params per indicator, e.g. {'SMA':[9,20], 'RSI':[14]}")
     
     # Comparison and aggregation
-    compare_with: Optional[List[str]] = Field(None, description="Tickers to compare with (for compare intents)")
-    aggregate: Optional[str] = Field(None, description="Aggregation requested e.g. 'sum' (used for volume totals)")
+    compare_with: Optional[List[str]] = Field(None, description="Tickers to compare with (for compare intents), e.g. ['VIC', 'SCB']")
+    aggregate: Optional[str] = Field(None, description="Aggregation requested e.g. 'sum', 'average', 'min', 'max', ...")
     extra: Optional[Dict[str, Any]] = Field(None, description="Freeform extras if needed")
     
