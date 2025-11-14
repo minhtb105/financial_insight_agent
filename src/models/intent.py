@@ -1,18 +1,33 @@
 from enum import Enum
 
 
+# === 1) INTENT TWO-LEVEL STRUCTURE ===
+
 class Intent(str, Enum):
-    historical_prices = "historical_prices"      # generic price queries
-    ohlcv = "ohlcv"                              # full OHLCV
-    close_price = "close_price"                  # đóng
-    open_price = "open_price"                    # mở
-    min_open = "min_open"                        # mã có giá mở cửa thấp nhất (over a range)
-    sum_volume = "sum_volume"                    # tổng volume
-    compare_volume = "compare_volume"            # so sánh volume giữa tickers
-    company_shareholders = "company_shareholders"
-    company_subsidiaries = "company_subsidiaries"
-    company_executives = "company_executives"    # lãnh đạo đang làm việc
-    sma = "sma"                                  # SMA (window)
-    rsi = "rsi"                                  # RSI (window)
-    multiple_indicators = "multiple_indicators" # ví dụ SMA9 + SMA20
-    other = "other"                              # fallback / biến thể
+    historical_prices = "historical_prices" # lấy dữ liệu giá quá khứ
+    technical_indicator = "technical_indicator" # SMA, RSI, MACD, ...
+    company_info = "company_info" # lãnh đạo, cổ đông, công ty con
+
+# === 2) REQUESTED FIELD (CỤ THỂ MUỐN LẤY GÌ) ===
+# Parser sẽ map các câu hỏi sang requested_field
+# ví dụ: "giá đóng" → "close_price"
+
+class RequestedField(str, Enum):
+    # Historical price fields
+    close_price = "close_price"
+    open_price = "open_price"
+    high_price = "high_price"
+    low_price = "low_price"
+    ohlcv = "ohlcv"
+    volume = "volume"
+
+    # Technical indicators
+    sma = "sma" # SMA window
+    rsi = "rsi" # RSI window
+    macd = "macd" # MACD
+
+    # Company data
+    shareholders = "shareholders"
+    subsidiaries = "subsidiaries"
+    executives = "executives"
+    
