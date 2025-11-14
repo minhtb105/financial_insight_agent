@@ -134,7 +134,12 @@ class QueryParser:
         
         return match.group(0) if match else text
     
-    @tool("parse_stock_query", return_direct=True)
+    @tool(
+        "parse_stock_query",
+        description="""Phân tích câu hỏi tiếng Việt về chứng khoán thành JSON chuẩn để các tool khác sử dụng.
+                    Dùng cho mọi truy vấn về giá, chỉ báo kỹ thuật, thông tin công ty, so sánh, tổng hợp, v.v.
+                    Đầu vào là câu hỏi tự nhiên, đầu ra là dict theo schema HistoricalQuery."""
+    )
     def parse_tool(self, query: str):
         return self.parse(query)
     
