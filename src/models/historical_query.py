@@ -9,6 +9,8 @@ class HistoricalQuery(BaseModel):
         None,
         description="Specific field requested: open_price, sma, shareholders, ..."
     )
+    tickers: List[str] = Field(default_factory=list, description="Ticker symbols (uppercase)")
+    
     # Time ranges
     start: Optional[str] = Field(None, description="Start date YYYY-MM-DD or None")
     end: Optional[str] = Field(None, description="End date YYYY-MM-DD or None")
