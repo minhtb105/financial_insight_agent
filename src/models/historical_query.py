@@ -26,7 +26,6 @@ class HistoricalQuery(BaseModel):
     interval: Optional[str] = Field(None, description="Data interval e.g. '1m','5m','30m','1d'")
     
     # Technical indicator parameters
-    indicators: Optional[List[str]] = Field(None, description="List of indicators requested, e.g. ['SMA','SMA'] or ['RSI'] or ['SMA'] or ['RSI']")
     indicator_params: Optional[Dict[str, Any]] = Field(None, description="Params per indicator, e.g. {'SMA':[9,20], 'RSI':[14]}")
     
     # Comparison and aggregation
