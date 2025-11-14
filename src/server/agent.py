@@ -1,8 +1,9 @@
 import os
 from dotenv import load_dotenv
-from langchain.agents import initialize_agent, AgentType
+from langchain.agents import create_agent
+from langchain_core.prompts import PromptTemplate
 from langchain_groq import ChatGroq
-from langchain.tools import Tool
+from langchain.tools import tool
 from llm_tools.nlp_parser import QueryParser
 from llm_tools.tools import (
     get_company_info_tool,
@@ -27,24 +28,34 @@ class StockAgent:
 
         self.parser = QueryParser(model=model)
         
-        self.tools = [
-            Tool(name="parse_stock_query", func=self.parser.parse_tool, description="Parse câu hỏi thành JSON HistoricalQuery"),
-            Tool(name="get_company_info", func=get_company_info_tool, description="Lấy thông tin công ty (shareholders/subsidiaries/executives)"),
-            Tool(name="get_ohlcv", func=get_ohlcv_tool, description="Lấy dữ liệu OHLCV cho ticker"),
-            Tool(name="get_price_stat", func=get_price_stat_tool, description="Lấy thống kê giá (min/max/mean)"),
-            Tool(name="get_aggregate_volume", func=get_aggregate_volume_tool, description="Tính tổng volume"),
-            Tool(name="compare_volume", func=compare_volume_tool, description="So sánh volume giữa các ticker"),
-            Tool(name="get_sma", func=get_sma_tool, description="Tính SMA theo window"),
-            Tool(name="get_rsi", func=get_rsi_tool, description="Tính RSI theo window"),
-        ]
+        self.tools = [self.parser.parse_tool, get_company_info_tool, get_ohlcv_tool, 
+                    get_price_stat_tool, get_aggregate_volume_tool, 
+                    compare_volume_tool, get_sma_tool, get_rsi_tool]
 
-        # Khởi tạo agent (ZERO SHOT REACT dùng tools)
-        self.agent = initialize_agent(
+           # ─────────────────────────────
+        # Prompt chuẩn cho ReAct agent
+        # ─────────────────────────────
+        template = """
+            Bạn là một assistant phân tích chứng khoán. 
+            Bạn sẽ sử dụng tools khi cần thiết để trả lời truy vấn của người dùng.
+
+            Nếu câu hỏi liên quan đến phân tích chứng khoán (SMA, RSI, giá, volume, cổ đông, lãnh đạo...),
+            hãy gọi tool parse_stock_query trước.
+
+            Sau khi có JSON schema, hãy chọn đúng tool và trả câu trả lời cuối cùng bằng tiếng Việt.
+
+            Dữ liệu vào: {input}
+        """
+
+        prompt = PromptTemplate.from_template(template)
+
+        # ─────────────────────────────
+        # Tạo agent chuẩn LangChain
+        # ─────────────────────────────
+        self.agent = create_agent(
+            model=self.llm,
             tools=self.tools,
-            llm=self.llm,
-            agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-            verbose=False,  
-            handle_parsing_errors=True,
+            prompt=prompt,
         )
 
     def run(self, query: str) -> str:
