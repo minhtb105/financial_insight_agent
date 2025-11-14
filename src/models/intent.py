@@ -16,8 +16,6 @@ class RequestedField(str, Enum):
     # Historical price fields
     open_price = "open_price"       # Giá mở cửa
     close_price = "close_price"     # Giá đóng cửa
-    high_price = "high_price"       # Giá cao nhất
-    low_price = "low_price"         # Giá thấp nhất
     volume = "volume"               # Khối lượng giao dịch
     ohlcv = "ohlcv"                 # Giá trị OHLCV đầy đủ
 
