@@ -8,7 +8,7 @@ def get_ohlcv(query: dict):
         interval=query.get("interval", "1d"),
     )
     
-    return df
+    return df.to_dict(orient="records")
 
 def get_price_field(query: dict):
     """
@@ -51,7 +51,7 @@ def get_price_field(query: dict):
     if col not in df.columns:
         return None
 
-    return df[["date", col]]
+    return df[["date", col]].to_dict(orient="records")
 
 def get_price_stat(query: dict, stat: str):
     client = VNStockClient(ticker=query["tickers"][0])
@@ -144,6 +144,7 @@ def get_sma(query: dict):
         interval=query.get("interval") or "1d",
         window_size=max(window_sizes),
     )
+    
     result = {}
     for w in window_sizes:
         col = f"SMA"
@@ -166,6 +167,7 @@ def get_rsi(query: dict):
         interval=query.get("interval") or "1d",
         window_size=max(window_sizes),
     )
+    
     result = {}
     for w in window_sizes:
         col = f"RSI_{w}"
