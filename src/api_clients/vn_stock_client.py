@@ -43,6 +43,8 @@ class VNStockClient:
         df = df.rename(columns={"time": "date"})
         df = df[(df["date"] >= start_str) & (df["date"] <= end_str)]
         
+        df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+        
         if df.empty:
             return df, {}
         

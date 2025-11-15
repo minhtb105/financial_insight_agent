@@ -55,9 +55,6 @@ def get_company_info_tool(query: Optional[Dict[str, Any]] = None) -> str:
 def get_ohlcv_tool(query: Optional[Dict[str, Any]] = None) -> str:
     try:
         records = get_ohlcv(query)
-        for r in records:
-            if "date" in r:
-                r["date"] = r["date"].strftime("%Y-%m-%d")
     except Exception as e:
         return f"Lỗi khi lấy OHLCV: {e}"
 
@@ -71,9 +68,6 @@ def get_ohlcv_tool(query: Optional[Dict[str, Any]] = None) -> str:
 def get_price_field_tool(query: Optional[Dict[str, Any]] = None) -> str:
     try:
         records = get_price_field(query)
-        for r in records:
-            if "date" in r:
-                r["date"] = r["date"].strftime("%Y-%m-%d")
     except Exception as e:
         return f"Lỗi khi lấy trường giá: {e}"
 
@@ -160,9 +154,6 @@ def get_min_open_across_tickers_tool(query: Optional[Dict[str, Any]] = None) -> 
 def get_sma_tool(query: Optional[Dict[str, Any]] = None) -> str:
     try:
         records = get_sma(query)
-        for r in records:
-            if "date" in r:
-                r["date"] = r["date"].strftime("%Y-%m-%d")
     except Exception as e:
         return f"Lỗi khi tính SMA: {e}"
 
@@ -176,9 +167,6 @@ def get_sma_tool(query: Optional[Dict[str, Any]] = None) -> str:
 def get_rsi_tool(query: Optional[Dict[str, Any]] = None) -> str:
     try:
         records = get_rsi(query)
-        for r in records:
-            if "date" in r:
-                r["date"] = r["date"].strftime("%Y-%m-%d")
     except Exception as e:
         return f"Lỗi khi tính RSI: {e}"
 
