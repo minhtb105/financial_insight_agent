@@ -2,6 +2,8 @@ from langchain.tools import tool
 from data.indicators import (
     get_company_info,
     get_ohlcv,
+    get_min_open_across_tickers,
+    get_price_field,
     get_price_stat,
     get_aggregate_volume,
     compare_volume,
@@ -9,7 +11,11 @@ from data.indicators import (
     get_rsi,
 )
 from typing import Dict, Any
+import json
 
+
+def to_pretty_json(obj):
+    return json.dumps(obj, ensure_ascii=False, indent=2)
 
 @tool("get_company_info", description="Trả về thông tin cổ đông, lãnh đạo hoặc công ty con của mã cổ phiếu theo truy vấn.")
 def get_company_info_tool(query: Dict[str, Any]) -> str:
@@ -17,30 +23,26 @@ def get_company_info_tool(query: Dict[str, Any]) -> str:
     try:
         info = get_company_info(query)
     except Exception as e:
-        return f"❌ Lỗi khi lấy thông tin công ty: {e}"
+        return f"Lỗi khi lấy thông tin công ty: {e}"
+    
+    if not info:
+        return "Không có dữ liệu công ty."
     
     # Tuỳ thuộc vào requested_field, info có thể là shareholders, executives, subsidiaries...
-    if isinstance(info, list):
-        return "\n".join(str(x) for x in info)
-    
-    return str(info)
+    return to_pretty_json(info)
 
 @tool("get_ohlcv", description="Trả về dữ liệu OHLCV (giá mở cửa, đóng cửa, cao nhất, thấp nhất, khối lượng) cho mã cổ phiếu theo truy vấn.")
 def get_ohlcv_tool(query: Dict[str, Any]) -> str:
     """Lấy dữ liệu OHLCV theo schema query."""
     try:
-        df = get_ohlcv(query)
+        records = get_ohlcv(query)
     except Exception as e:
         return f"Lỗi khi lấy OHLCV: {e}"
 
-    if df is None or df.empty:
+    if not records:
         return "Không có dữ liệu OHLCV."
 
-    try:
-        return df.tail(5).to_string(index=False)
-    except Exception:
-        return df.to_string(index=False)
-
+    return to_pretty_json(records)
 
 @tool("get_price_stat",  description="Tính toán giá trị min, max hoặc trung bình cho giá mở cửa hoặc đóng cửa của mã cổ phiếu.")
 def get_price_stat_tool(query: Dict[str, Any]) -> str:
@@ -68,7 +70,7 @@ def get_aggregate_volume_tool(query: Dict[str, Any]) -> str:
     try:
         val = get_aggregate_volume(query)
     except Exception as e:
-        return f"❌ Lỗi khi tính tổng volume: {e}"
+        return f"Lỗi khi tính tổng volume: {e}"
 
     if val is None:
         return "Không có dữ liệu khối lượng."
@@ -86,11 +88,7 @@ def compare_volume_tool(query: Dict[str, Any]) -> str:
     if not result:
         return "Không có dữ liệu so sánh."
 
-    lines = []
-    for ticker, vol in result.items():
-        lines.append(f"{ticker}: {int(vol)}")
-        
-    return "\n".join(lines)
+    return to_pretty_json(result)
 
 @tool("get_sma", description="Tính chỉ báo SMA (Simple Moving Average) cho mã cổ phiếu với các window size được chỉ định.")
 def get_sma_tool(query: dict) -> str:
@@ -132,3 +130,29 @@ def get_rsi_tool(query: Dict[str, Any]) -> str:
             out.append(f"{k}: {v}")
             
     return ", ".join(out)
+
+@tool("get_price_field", description="Trả về chuỗi thời gian của một trường giá (open, close, high, low, volume) cho mã cổ phiếu.")
+def get_price_field_tool(query: Dict[str, Any]) -> str:
+    """Lấy chuỗi thời gian của một trường giá cụ thể theo schema query."""
+    try:
+        df = get_price_field(query)
+    except Exception as e:
+        return f"Lỗi khi lấy trường giá: {e}"
+    
+    if df is None or df.empty:
+        return "Không có dữ liệu trường giá."
+    
+    return df.to_string(index=False)
+
+@tool("get_min_open_across_tickers", description="Tìm mã có giá mở cửa thấp nhất trong danh sách tickers trong khoảng thời gian truy vấn.")
+def get_min_open_across_tickers_tool(query: Dict[str, Any]) -> str:
+    """Tìm mã có giá mở cửa thấp nhất trong danh sách tickers."""
+    try:
+        result = get_min_open_across_tickers(query)
+    except Exception as e:
+        return f"Lỗi khi tìm mã có open thấp nhất: {e}"
+    
+    if not result:
+        return "Không có dữ liệu."
+    
+    return to_pretty_json(result)
