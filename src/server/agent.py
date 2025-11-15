@@ -7,6 +7,8 @@ from llm_tools.nlp_parser import QueryParser
 from llm_tools.tools import (
     get_company_info_tool,
     get_ohlcv_tool,
+    get_min_open_across_tickers_tool,
+    get_price_field_tool,
     get_price_stat_tool,
     get_aggregate_volume_tool,
     compare_volume_tool,
@@ -34,6 +36,8 @@ class StockAgent:
             parser.parse_tool,
             get_company_info_tool,
             get_ohlcv_tool,
+            get_min_open_across_tickers_tool,
+            get_price_field_tool,
             get_price_stat_tool,
             get_aggregate_volume_tool,
             compare_volume_tool,
