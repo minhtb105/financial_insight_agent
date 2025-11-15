@@ -8,7 +8,7 @@ def get_ohlcv(query: dict):
         interval=query.get("interval", "1d"),
     )
     
-    return df.to_dict(orient="records")
+    return df.tail(5).to_dict(orient="records")
 
 def get_price_field(query: dict):
     """
