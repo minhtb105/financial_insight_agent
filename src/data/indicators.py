@@ -1,11 +1,12 @@
 from api_clients.vn_stock_client import VNStockClient
 
+
 def get_ohlcv(query: dict):
     client = VNStockClient(ticker=query["tickers"][0])
     df, _ = client.fetch_trading_data(
         start=query.get("start"),
         end=query.get("end"),
-        interval=query.get("interval", "1d"),
+        interval=query.get("interval") or "1d",
     )
     
     return df.tail(5).to_dict(orient="records")
@@ -26,7 +27,7 @@ def get_price_field(query: dict):
     df, _ = client.fetch_trading_data(
         start=query.get("start"),
         end=query.get("end"),
-        interval=query.get("interval", "1d"),
+        interval=query.get("interval") or "1d",
     )
 
     if df is None or df.empty:
@@ -58,7 +59,7 @@ def get_price_stat(query: dict, stat: str):
     df, _ = client.fetch_trading_data(
         start=query.get("start"),
         end=query.get("end"),
-        interval=query.get("interval", "1d"),
+        interval=query.get("interval") or "1d",
     )
     if stat == "min":
         return df[query["requested_field"].replace("_price", "")].min()
