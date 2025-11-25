@@ -2,7 +2,6 @@ from langchain_groq import ChatGroq
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import PromptTemplate
 from models.historical_query import HistoricalQuery
-from langchain.tools import tool
 from datetime import datetime
 import re
 
@@ -133,13 +132,3 @@ class QueryParser:
         match = re.search(r"\{.*\}", text, re.DOTALL)
         
         return match.group(0) if match else text
-    
-    @tool(
-        "parse_stock_query",
-        description="""Phân tích câu hỏi tiếng Việt về chứng khoán thành JSON chuẩn để các tool khác sử dụng.
-                    Dùng cho mọi truy vấn về giá, chỉ báo kỹ thuật, thông tin công ty, so sánh, tổng hợp, v.v.
-                    Đầu vào là câu hỏi tự nhiên, đầu ra là dict theo schema HistoricalQuery."""
-    )
-    def parse_tool(self, query: str):
-        return self.parse(query)
-    
