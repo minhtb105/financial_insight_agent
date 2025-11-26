@@ -7,6 +7,6 @@ class Interval(str, Enum):
     _15m = "15m"
     _30m = "30m"
     _1h = "1H"
-    _1d = "1D"
+    _1d = "1d"
     _1w = "1W"
     _1M = "1M"
