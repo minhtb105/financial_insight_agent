@@ -8,3 +8,4 @@ src/tests/__pycache__
 src/llm_tools/__pycache__
 src/data/__pycache__
 src/server/__pycache__
+.langgraph_api/
