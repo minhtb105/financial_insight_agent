@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from models.query_type import QueryType
 from models.requested_field import RequestedField
+from models.interval import Interval
 
 
 class HistoricalQuery(BaseModel):
@@ -18,7 +19,7 @@ class HistoricalQuery(BaseModel):
     months: Optional[int] = None
     weeks: Optional[int] = None
     days: Optional[int] = None
-    interval: Optional[str] = None
+    interval: Optional[Interval] = None
 
     indicator_params: Optional[Dict[str, Any]] = None
 
