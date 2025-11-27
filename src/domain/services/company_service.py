@@ -1,4 +1,3 @@
-from data.indicators import get_company_info
 from typing import Dict, Any
 from infrastructure.api_clients.vn_stock_client import VNStockClient
 
