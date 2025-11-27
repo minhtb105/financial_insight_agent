@@ -1,7 +1,3 @@
-from data.indicators import (
-    get_ohlcv, 
-    get_price_field,
-)
 from typing import Dict, Any
 from infrastructure.api_clients.vn_stock_client import VNStockClient
 
@@ -13,7 +9,6 @@ class PriceService:
     - open_price, close_price
     - volume
     """
-
     def get_ohlcv(self, query: dict):
         client = VNStockClient(ticker=query["tickers"][0])
         df, _ = client.fetch_trading_data(
@@ -29,11 +24,9 @@ class PriceService:
         Return one of price field following requested_field:
         - close_price → close
         - open_price → open
-        - high_price → high
-        - low_price → low
         - volume → volume
 
-        Output: DataFrame gồm 2 cột: date + value_field
+        Output: date + value_field
         """
 
         client = VNStockClient(ticker=query["tickers"][0])
@@ -49,8 +42,6 @@ class PriceService:
         mapping = {
             "close_price": "close",
             "open_price": "open",
-            "high_price": "high",
-            "low_price": "low",
             "volume": "volume",
         }
 
@@ -68,11 +59,6 @@ class PriceService:
 
     def handle(self, parsed: Dict[str, Any]):
         field = parsed.get("requested_field")
-        tickers = parsed.get("tickers") or []
-
-        if not tickers:
-            return {"error": "Missing ticker"}
-
         try:
             if field == "ohlcv":
                 return self.get_ohlcv(parsed)
