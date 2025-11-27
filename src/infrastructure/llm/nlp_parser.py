@@ -2,7 +2,7 @@ from langchain_groq import ChatGroq
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
-from models.historical_query import HistoricalQuery
+from domain.entities.historical_query import HistoricalQuery
 from datetime import datetime
 import re
 
