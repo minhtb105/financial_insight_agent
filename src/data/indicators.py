@@ -13,7 +13,7 @@ def get_ohlcv(query: dict):
 
 def get_price_field(query: dict):
     """
-    Trả về 1 trong các trường giá theo requested_field:
+    Return one of price field following requested_field:
     - close_price → close
     - open_price → open
     - high_price → high
@@ -33,7 +33,6 @@ def get_price_field(query: dict):
     if df is None or df.empty:
         return None
 
-    # mapping từ requested_field → column trong df
     mapping = {
         "close_price": "close",
         "open_price": "open",
@@ -72,7 +71,7 @@ def get_price_stat(query: dict, stat: str):
 
 def get_min_open_across_tickers(query: dict):
     """
-    Tìm mã có giá mở cửa (open) thấp nhất trong N ngày qua.
+    Find the smallest open price over N days ago.
     
     tickers = ["BID", "TCB", "VCB"]
     requested_field = "open_price"
@@ -99,7 +98,6 @@ def get_min_open_across_tickers(query: dict):
     if not results:
         return None
 
-    # tìm ticker có open thấp nhất
     lowest_ticker = min(results, key=results.get)
 
     return {
@@ -136,7 +134,7 @@ def get_sma(query: dict):
     if query.get("indicator_params") and "sma" in query["indicator_params"]:
         window_sizes = query["indicator_params"]["sma"]
     else:
-        window_sizes = [9]  # default
+        window_sizes = [9] 
 
     client = VNStockClient(ticker=query["tickers"][0])
     df, _ = client.fetch_trading_data(
@@ -159,7 +157,7 @@ def get_rsi(query: dict):
     if query.get("indicator_params") and "rsi" in query["indicator_params"]:
         window_sizes = query["indicator_params"]["rsi"]
     else:
-        window_sizes = [14]  # default
+        window_sizes = [14] # default
 
     client = VNStockClient(ticker=query["tickers"][0])
     df, _ = client.fetch_trading_data(
@@ -189,6 +187,5 @@ def get_company_info(query: dict):
     elif field == "executives":
         return df.officers(filter_by='all').to_dict(orient="records")
     else:
-        # Trả về toàn bộ DataFrame dưới dạng dict nếu không chỉ định trường cụ thể
         return df.overview().to_dict(orient="records")
     
