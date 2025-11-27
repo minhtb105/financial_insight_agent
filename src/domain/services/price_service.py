@@ -57,10 +57,10 @@ def handle(self, parsed: Dict[str, Any]):
     field = parsed.get("requested_field")
     try:
         if field == "ohlcv":
-            return self.get_ohlcv(parsed)
+            return get_ohlcv(parsed)
 
         if field in ("open_price", "close_price", "volume"):    
-            return self.get_price_field(parsed)
+            return get_price_field(parsed)
 
         return {"error": f"requested_field is invalid for price_query: {field}"}
 
