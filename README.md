@@ -19,27 +19,66 @@
 ```
 src/
 │
-├── api_clients/       # Kết nối và lấy dữ liệu từ các nguồn chứng khoán (TCBS, vnstock)
-│   └── vn_stock_client.py
+├── domain/                         # Business logic thuần (models, entities, value objects)
+│   ├── entities/
+│   │   ├── historical_query.py     # Pydantic models, domain rules
+│   │   ├── query_type.py
+│   │   ├── interval.py
+│   │   └── requested_field.py
+│   │
+│   ├── services/                   # Logic nghiệp vụ KHÔNG phụ thuộc hạ tầng
+│   │   ├── price_service.py        # xử lý price_query
+│   │   ├── indicator_service.py    # xử lý sma/rsi/macd
+│   │   ├── company_service.py      # xử lý company_query
+│   │   ├── compare_service.py      # xử lý comparison_query
+│   │   ├── ranking_service.py      # xử lý ranking_query
+│   │   └── aggregate_service.py    # xử lý aggregate_query
+│   │
+│   └── utils/
+│       └── date_utils.py           # last N days, tuần, tháng
 │
-├── data/              # Các hàm xử lý, tính toán chỉ báo, tổng hợp dữ liệu
-│   └── indicators.py
+├── application/                    # Lớp điều phối (use cases)
+│   ├── handlers/                   
+│   │   ├── query_router.py         # route theo QueryType → Service tương ứng
+│   │   └── result_formatter.py
+│   │
+│   └── agent/
+│       ├── stock_agent.py          # orchestrator gọi parser + router + service
+│       └── tool_registry.py        # đăng ký tools
 │
-├── llm_tools/         # Xử lý truy vấn bằng LLM, định nghĩa các tool cho agent
-│   ├── nlp_parser.py
-│   └── tools.py
+├── infrastructure/                 # External services có thể thay thế
+│   ├── api_clients/
+│   │   └── vn_stock_client.py      # wrapper của vnstock
+│   │
+│   ├── llm/
+│   │   ├── nlp_parser.py           # gọi LLM → JSON
+│   │   └── groq_client.py          # LLM provider
+│   │
+│   └── cache/
+│       └── redis_cache.py          # optional
 │
-├── models/            # Định nghĩa schema, intent, các model Pydantic
-│   ├── historical_query.py
-│   └── intent.py
+├── interfaces/                     # Entry points (FastAPI, CLI, Webhook)
+│   ├── http/
+│   │   └── app.py                  # FastAPI server
+│   │
+│   └── cli/
+│       └── console.py              # CLI chạy agent
 │
-├── server/            # Agent, API server (FastAPI)
-│   ├── agent.py
-│   └── app.py
+├── tests/  
+│   ├── unit/
+│   │   ├── test_parser.py
+│   │   ├── test_price_service.py
+│   │   ├── test_indicator_service.py
+│   │   └── test_router.py
+│   │
+│   ├── integration/
+│   │   ├── test_agent_e2e.py
+│   │   └── test_api_endpoints.py
+│   │
+│   └── data/
+│       └── test_questions.xlsx
 │
-└── tests/             # Unit test cho parser, tools, agent
-    ├── test_query_parser_datetime.py
-    └── test_questions.py
+└── main.py # entry point cho chạy CLI hoặc server
 ```
 
 ---
