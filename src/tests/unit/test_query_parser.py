@@ -1,5 +1,5 @@
 from langsmith import Client
-from llm_tools.nlp_parser import QueryParser
+from infrastructure.llm.nlp_parser import QueryParser
 
 
 client = Client()
