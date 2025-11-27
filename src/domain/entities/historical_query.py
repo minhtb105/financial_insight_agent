@@ -1,8 +1,8 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
-from models.query_type import QueryType
-from models.requested_field import RequestedField
-from models.interval import Interval
+from domain.entities.query_type import QueryType
+from domain.entities.requested_field import RequestedField
+from domain.entities.interval import Interval
 
 
 class HistoricalQuery(BaseModel):
