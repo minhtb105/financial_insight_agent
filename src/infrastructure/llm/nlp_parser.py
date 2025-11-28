@@ -110,7 +110,7 @@ class QueryParser:
         
         response = self.structured_output_llm.invoke([system_msg] + [human_msg])
         
-        return response
+        return response.model_dump()
         
     @staticmethod
     def _extract_json(text: str) -> str:
