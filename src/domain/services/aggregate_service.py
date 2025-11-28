@@ -42,7 +42,7 @@ def get_aggregate_volume(query: dict, stat: str):
         return None
 
 
-def handle(parsed: Dict[str, Any]):
+def handle_aggregate_query(parsed: Dict[str, Any]):
     field = parsed.get("requested_field")
 
     try:
