@@ -53,10 +53,21 @@ class QueryParser:
                 - comparison_query → có chữ 'so sánh'
                 - ranking_query → 'mã nào thấp nhất/cao nhất'
 
-                2) requested_field:
-                - open, close, volume, ohlcv
-                - sma, rsi, macd
-                - shareholders, executives, subsidiaries
+                2) requested_field (bắt buộc chọn 1):
+                nếu câu hỏi có bất kỳ từ khóa nào sau:
+                - 'giá mở', 'open', 'mở cửa' -> requested_field = 'open'
+                - 'giá đóng', 'giá chốt', 'close' -> requested_field = 'close'
+                - 'volume', 'khối lượng', 'GT khớp lệnh' -> requested_field = 'volume'
+                - 'ohlcv', 'toàn bộ ohlcv', 'giá mở - cao - thấp - đóng' -> requested_field = 'ohlcv'
+                - 'SMA', 'MA' → requested_field = 'sma' 
+                - 'RSI' → requested_field = 'rsi'
+                - 'MACD' → requested_field = 'macd'
+                - 'cổ đông lớn' → requested_field = 'shareholders'  
+                - 'ban lãnh đạo', 'CEO', 'BOD', 'board' → requested_field = 'executives'  
+                - 'công ty con', 'subsidiary' → requested_field = 'subsidiaries'  
+
+                **Nếu user chỉ hỏi 'giá' mà không rõ mở hay đóng:**  
+                → BẮT BUỘC chọn 'close'.
                 
                 3) Quy tắc tách tickers khi so sánh (BẮT BUỘC tuân thủ):
                 - Câu có dạng 'so sánh X với Y, Z' → tickers = [X], compare_with = [Y, Z]
