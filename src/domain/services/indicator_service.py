@@ -1,77 +1,92 @@
-from data.indicators import get_sma, get_rsi
 from typing import Dict, Any
 from infrastructure.api_clients.vn_stock_client import VNStockClient
+import pandas as pd
 
 
-class IndicatorService:
-    """
-    Handle indicator_query: SMA, RSI, MACD
-    """
-    def get_sma(self, query: dict):
-        window_sizes = []
-        if query.get("indicator_params") and "sma" in query["indicator_params"]:
-            window_sizes = query["indicator_params"]["sma"]
-        else:
-            window_sizes = [9] 
+def calculate_sma(df: pd.DataFrame, window: int):
+    return df["close"].rolling(window=window).mean()
 
-        client = VNStockClient(ticker=query["tickers"][0])
-        df, _ = client.fetch_trading_data(
-            start=query.get("start"),
-            end=query.get("end"),
-            interval=query.get("interval") or "1d",
-            window_size=max(window_sizes),
-        )
-        
-        result = {}
-        for w in window_sizes:
-            col = f"SMA"
-            if col in df.columns:
-                result[f"SMA{w}"] = df[col].iloc[-1]
-                
-        return result
+def calculate_rsi(df: pd.DataFrame, window: int = 14):
+    # Price change
+    delta = df["close"].diff()
 
-    def get_rsi(self, query: dict):
-        window_sizes = []
-        if query.get("indicator_params") and "rsi" in query["indicator_params"]:
-            window_sizes = query["indicator_params"]["rsi"]
-        else:
-            window_sizes = [14] # default
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
 
-        client = VNStockClient(ticker=query["tickers"][0])
-        df, _ = client.fetch_trading_data(
-            start=query.get("start"),
-            end=query.get("end"),
-            interval=query.get("interval") or "1d",
-            window_size=max(window_sizes),
-        )
-        
-        result = {}
-        for w in window_sizes:
-            col = f"RSI_{w}"
-            if col in df.columns:
-                result[f"RSI{w}"] = df[col].iloc[-1]
-                
-        return result
+    # Wilder's smoothing
+    avg_gain = gain.rolling(window=window).mean()
+    avg_loss = loss.rolling(window=window).mean()
+
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+
+    return rsi
+
+"""
+Handle indicator_query: SMA, RSI, MACD
+"""
+def get_sma(query: dict):
+    window_sizes = query.get("indicator_params", {}).get("sma", [9])
+    if not isinstance(window_sizes, (list, tuple)):
+        window_sizes = [int(window_sizes)]
+
+    client = VNStockClient(ticker=query["tickers"][0])
+    df = client.fetch_trading_data(
+        start=query.get("start"),
+        end=query.get("end"),
+        interval=query.get("interval") or "1d",
+        window_size=max(window_sizes),
+    )
+
+    result = {}
+    for w in window_sizes:
+        df[f"SMA{w}"] = calculate_sma(df, w)
+        result[f"SMA{w}"] = float(df[f"SMA{w}"].iloc[-1])
+
+    return result
+
+
+def get_rsi(query: dict):
+    window_sizes = query.get("indicator_params", {}).get("rsi", [14])
+    if not isinstance(window_sizes, (list, tuple)):
+        window_sizes = [int(window_sizes)]
+
+    client = VNStockClient(ticker=query["tickers"][0])
+    df = client.fetch_trading_data(
+        start=query.get("start"),
+        end=query.get("end"),
+        interval=query.get("interval") or "1d",
+        window_size=max(window_sizes),
+    )
+
+    result = {}
+    for w in window_sizes:
+        df[f"RSI{w}"] = calculate_rsi(df, w)
+        result[f"RSI{w}"] = float(df[f"RSI{w}"].iloc[-1])
+
+    return result
+
+
+def handle(parsed: Dict[str, Any]):
+    tickers = parsed.get("tickers") or []
+    if not tickers:
+        return {"error": "Missing ticker"}
+
+    params = parsed.get("indicator_params") or {}
+    output = {}
+
+    try:
+        if "sma" in params:
+            output["sma"] = get_sma(parsed)
+
+        if "rsi" in params:
+            output["rsi"] = get_rsi(parsed)
+
+        if not output:
+            return {"error": "Does not have any valid indicator"}
+
+        return output
+
+    except Exception as e:
+        return {"error": str(e)}
     
-    def handle(self, parsed: Dict[str, Any]):
-        tickers = parsed.get("tickers") or []
-        if not tickers:
-            return {"error": "Missing ticker"}
-
-        params = parsed.get("indicator_params") or {}
-        output = {}
-
-        try:
-            if "sma" in params:
-                output["sma"] = get_sma(parsed)
-
-            if "rsi" in params:
-                output["rsi"] = get_rsi(parsed)
-
-            if not output:
-                return {"error": "Does not has any valid indicator"}
-
-            return output
-
-        except Exception as e:
-            return {"error": str(e)}
