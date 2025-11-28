@@ -6,13 +6,15 @@ from domain.entities.interval import Interval
 
 
 class HistoricalQuery(BaseModel):
-    query_type: QueryType = Field(..., description="6 loại nhiệm vụ agent cần xử lý")
+    query_type: QueryType = Field(...,
+                                  description="6 loại nhiệm vụ agent cần xử lý")
 
     requested_field: Optional[RequestedField] = Field(
-        None, description="Field cụ thể: open_price, volume, sma, shareholders,…"
+        None, description="Field cụ thể: open, close, volume, sma, shareholders,…"
     )
 
-    tickers: List[str] = Field(default_factory=list, description="Danh sách mã cổ phiếu")
+    tickers: List[str] = Field(
+        default_factory=list, description="Danh sách mã cổ phiếu")
 
     start: Optional[str] = None
     end: Optional[str] = None
@@ -27,4 +29,3 @@ class HistoricalQuery(BaseModel):
     aggregate: Optional[str] = None
 
     extra: Optional[Dict[str, Any]] = None
-    
