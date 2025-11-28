@@ -3,5 +3,7 @@ src/financial_insight_agent.egg-info/
 src/infrastructure/__pycache__/
 src/infrastructure/api_clients/__pycache__/
 src/infrastructure/llm/__pycache__/
+src/domain/__pycache__/
+src/domain/entities/__pycache__/
 .env
 .langgraph_api/
