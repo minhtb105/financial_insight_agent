@@ -23,8 +23,8 @@ class QueryParser:
 
         self.parser = PydanticOutputParser(pydantic_object=HistoricalQuery)
 
-        self.prompt = PromptTemplate( 
-            template=( 
+        self.prompt = PromptTemplate(
+            template=(
                 """Bạn là một parser. Nhiệm vụ của bạn là phân tích câu hỏi và chỉ trả về JSON hợp lệ theo đúng schema (KHÔNG giải thích thêm). 
                 
                 ! QUY TẮC BẮT BUỘC (ưu tiên cao nhất):
@@ -54,7 +54,7 @@ class QueryParser:
                 - ranking_query → 'mã nào thấp nhất/cao nhất'
 
                 2) requested_field:
-                - open_price, close_price, volume, ohlcv
+                - open, close, volume, ohlcv
                 - sma, rsi, macd
                 - shareholders, executives, subsidiaries
                 
@@ -91,29 +91,32 @@ class QueryParser:
                 Trả về JSON theo schema sau: {format_instructions}"""
             ),
             input_variables=["query"],
-            partial_variables={"format_instructions": self.parser.get_format_instructions()},
+            partial_variables={
+                "format_instructions": self.parser.get_format_instructions()},
         )
 
-        self.chat = ChatGroq(model=model, temperature=0, api_key=api_key, max_retries=3)
+        self.chat = ChatGroq(model=model, temperature=0,
+                             api_key=api_key, max_retries=3)
         self.structured_output_llm = self.chat.with_structured_output(
-            HistoricalQuery, 
+            HistoricalQuery,
             method='json_mode')
 
     def parse(self, query: str) -> HistoricalQuery:
         now = datetime.now()
         system_msg = SystemMessage(self.prompt.format_prompt(
-            query=query, 
+            query=query,
             today=now.strftime("%Y-%m-%d")
         ).to_string())
-        
+
         human_msg = HumanMessage(query)
-        
-        response = self.structured_output_llm.invoke([system_msg] + [human_msg])
-        
+
+        response = self.structured_output_llm.invoke(
+            [system_msg] + [human_msg])
+
         return response.model_dump()
-        
+
     @staticmethod
     def _extract_json(text: str) -> str:
         match = re.search(r"\{.*\}", text, re.DOTALL)
-        
+
         return match.group(0) if match else text
