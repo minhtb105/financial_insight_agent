@@ -1,78 +1,88 @@
-from data.indicators import (
-    get_min_open_across_tickers,
-    get_price_stat,
-    get_price_field,
-)
 from typing import Dict, Any
 from infrastructure.api_clients.vn_stock_client import VNStockClient
 
 
-class RankingService:
+def get_price_series(query: dict):
     """
-    Handle ranking_query:
+    Fetch OHLCV data for a single ticker and extract the target price field.
+
+    Returns:
+        pandas.Series or None
     """
-    def get_min_open_across_tickers(self, query: dict):
-        """
-        Find the smallest open price over N days ago.
-        
-        tickers = ["BID", "TCB", "VCB"]
-        requested_field = "open_price"
-        aggregate = "min"
-        """
+    ticker = query["tickers"][0]
+    field = query.get("requested_field")
 
-        tickers = query["tickers"]
-        start = query.get("start")
-        end = query.get("end")
-        interval = query.get("interval") or "1d"
+    df = VNStockClient(ticker=ticker).fetch_trading_data(
+        start=query.get("start"),
+        end=query.get("end"),
+        interval=query.get("interval") or "1d",
+    )
 
-        results = {}
+    if df is None or df.empty:
+        return None
 
-        for ticker in tickers:
-            client = VNStockClient(ticker=ticker)
-            df, _ = client.fetch_trading_data(start=start, end=end, interval=interval)
+    return df[field]
 
-            if df is None or df.empty:
-                continue
 
-            min_open = df["open"].min()
-            results[ticker] = min_open
+def get_price_stat(query: dict):
+    """
+    Compute an aggregate statistic (min / max / mean)
+    for a single ticker.
+    """
+    series = get_price_series(query)
+    if series is None:
+        return None
 
-        if not results:
-            return None
+    agg = query.get("aggregate")
 
-        lowest_ticker = min(results, key=results.get)
+    if agg == "min":
+        return float(series.min())
+    elif agg == "max":
+        return float(series.max())
+    elif agg == "mean":
+        return float(series.mean())
+
+    return None
+
+
+def handle_ranking_query(parsed: Dict[str, Any]):
+    """
+    Handle multi-ticker price aggregation:
+    - min close price across tickers
+    - max open price across tickers
+    - average volume across tickers
+    """
+
+    requested_field = parsed.get("requested_field")
+    aggregate = parsed.get("aggregate")
+    tickers = parsed.get("tickers", [])
+
+    if requested_field not in ("open", "close", "volume"):
+        return {"error": "Invalid requested_field for price aggregation"}
+
+    if aggregate not in ("min", "max", "mean"):
+        return {"error": "Invalid aggregate (must be min/max/mean)"}
+
+    results = {}
+
+    for t in tickers:
+        q = dict(parsed)
+        q["tickers"] = [t]
+        value = get_price_stat(q)
+        results[t] = value
+
+    # If comparing across tickers (min/max)
+    if aggregate in ("min", "max"):
+        winner = (
+            min(results.items(), key=lambda x: x[1])[0]
+            if aggregate == "min"
+            else max(results.items(), key=lambda x: x[1])[0]
+        )
 
         return {
-            "ticker": lowest_ticker,
-            "min_open": results[lowest_ticker],
-            "details": results
+            "winner": winner,
+            "value": results[winner],
+            "details": results,
         }
 
-    def handle(self, parsed: Dict[str, Any]):
-        try:
-            # Special case: min open price
-            if parsed.get("requested_field") == "open_price" and parsed.get("aggregate") == "min":
-                return self.get_min_open_across_tickers(parsed)
-
-            results = {}
-            for t in parsed.get("tickers", []):
-                q = dict(parsed)
-                q["tickers"] = [t]
-
-                if parsed.get("aggregate"):
-                    results[t] = get_price_stat(q, parsed["aggregate"])
-                else:
-                    values = get_price_field(q)
-                    results[t] = values[-1] if values else None
-
-            # choose winner
-            if parsed.get("aggregate") in ("min", "max"):
-                key_fn = min if parsed["aggregate"] == "min" else max
-                winner = key_fn(results.items(), key=lambda x: x[1])[0]
-                
-                return {"winner": winner, "details": results}
-
-            return results
-
-        except Exception as e:
-            return {"error": str(e)}
+    return results
