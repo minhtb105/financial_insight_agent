@@ -6,6 +6,7 @@ import pandas as pd
 def calculate_sma(df: pd.DataFrame, window: int):
     return df["close"].rolling(window=window).mean()
 
+
 def calculate_rsi(df: pd.DataFrame, window: int = 14):
     # Price change
     delta = df["close"].diff()
@@ -22,9 +23,12 @@ def calculate_rsi(df: pd.DataFrame, window: int = 14):
 
     return rsi
 
+
 """
 Handle indicator_query: SMA, RSI, MACD
 """
+
+
 def get_sma(query: dict):
     window_sizes = query.get("indicator_params", {}).get("sma", [9])
     if not isinstance(window_sizes, (list, tuple)):
@@ -67,7 +71,7 @@ def get_rsi(query: dict):
     return result
 
 
-def handle(parsed: Dict[str, Any]):
+def handle_indicator_query(parsed: Dict[str, Any]):
     tickers = parsed.get("tickers") or []
     if not tickers:
         return {"error": "Missing ticker"}
@@ -89,4 +93,3 @@ def handle(parsed: Dict[str, Any]):
 
     except Exception as e:
         return {"error": str(e)}
-    

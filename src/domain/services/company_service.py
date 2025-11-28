@@ -3,6 +3,8 @@ from infrastructure.api_clients.vn_stock_client import VNStockClient
 
 
 """Handle company_query: shareholders, subsidiaries, executives"""
+
+
 def get_company_info(query: dict):
     client = VNStockClient(ticker=query["tickers"][0])
     df = client.company
@@ -17,7 +19,8 @@ def get_company_info(query: dict):
     else:
         return df.overview().to_dict(orient="records")
 
-def handle(parsed: Dict[str, Any]):
+
+def handle_company_query(parsed: Dict[str, Any]):
     tickers = parsed.get("tickers") or []
     if not tickers:
         return {"error": "Missing ticker"}

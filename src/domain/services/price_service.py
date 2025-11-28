@@ -39,7 +39,7 @@ def get_price_field(query: dict):
     return df[["date", requested]].to_dict(orient="records")
 
 
-def handle(self, parsed: Dict[str, Any]):
+def handle_price_query(parsed: Dict[str, Any]):
     field = parsed.get("requested_field")
     try:
         if field == "ohlcv":

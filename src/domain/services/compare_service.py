@@ -59,7 +59,7 @@ def fetch_ohlcv(ticker: str, parsed: Dict[str, Any]):
 
 # ------------ Unified compare engine ----------------
 
-def compare_fields(parsed: Dict[str, Any]) -> Dict[str, Any]:
+def handle_compare_query(parsed: Dict[str, Any]) -> Dict[str, Any]:
     """
     General compare handler for fields:
       - open, close, high, low
