@@ -72,8 +72,9 @@ class QueryParser:
 
                 5) Technical indicators:
                 - SMA9 → {{'sma':[9]}}
-                - SMA9 và SMA20 → {{"sma":[9, 20]}}
+                - SMA9 và SMA20 → {{'sma':[9, 20]}}
                 - RSI14 -> {{'rsi': [14]}}
+                - SMA9, SMA20 và RSI14 -> {{'sma':[9, 20], 'rsi': [14]}}
                 
                 6) Quy tắc thời gian: 
                 - 'X ngày qua', 'X ngày gần nhất', 'trong X ngày', 'X ngày vừa rồi' → Trả về: 
