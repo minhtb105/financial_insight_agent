@@ -9,10 +9,14 @@ Handle price_query: ohlcv, open_price, close_price, volume
 
 def get_ohlcv(query: dict):
     client = VNStockClient(ticker=query["tickers"][0])
+    interval = query.get("interval") or "1d"
+    interval = interval.value if hasattr(
+        interval, "value") else interval
+
     df = client.fetch_trading_data(
         start=query.get("start"),
         end=query.get("end"),
-        interval=query.get("interval") or "1d",
+        interval=interval
     )
 
     return df.tail(5).to_dict(orient="records")
@@ -25,10 +29,14 @@ def get_price_field(query: dict):
     """
 
     client = VNStockClient(ticker=query["tickers"][0])
+    interval = query.get("interval") or "1d"
+    interval = interval.value if hasattr(
+        interval, "value") else interval
+
     df = client.fetch_trading_data(
         start=query.get("start"),
         end=query.get("end"),
-        interval=query.get("interval") or "1d",
+        interval=interval,
     )
 
     if df is None or df.empty:

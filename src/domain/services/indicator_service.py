@@ -34,11 +34,15 @@ def get_sma(query: dict):
     if not isinstance(window_sizes, (list, tuple)):
         window_sizes = [int(window_sizes)]
 
+    interval = query.get("interval") or "1d"
+    interval = interval.value if hasattr(
+        interval, "value") else interval
+
     client = VNStockClient(ticker=query["tickers"][0])
     df = client.fetch_trading_data(
         start=query.get("start"),
         end=query.get("end"),
-        interval=query.get("interval") or "1d",
+        interval=interval,
         window_size=max(window_sizes),
     )
 
@@ -55,12 +59,23 @@ def get_rsi(query: dict):
     if not isinstance(window_sizes, (list, tuple)):
         window_sizes = [int(window_sizes)]
 
+    rsi_window = max(window_sizes)
+    requested_days = query.get("days") or 0
+
+    # Ensure enough data for RSI calculation
+    min_required = rsi_window + 1
+    fetch_days = max(requested_days, min_required)
+
+    interval = query.get("interval") or "1d"
+    interval = interval.value if hasattr(
+        interval, "value") else interval
+
     client = VNStockClient(ticker=query["tickers"][0])
     df = client.fetch_trading_data(
         start=query.get("start"),
         end=query.get("end"),
-        interval=query.get("interval") or "1d",
-        window_size=max(window_sizes),
+        interval=interval,
+        window_size=fetch_days,
     )
 
     result = {}

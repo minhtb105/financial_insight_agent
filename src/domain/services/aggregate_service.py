@@ -11,10 +11,14 @@ Handle aggregate_query:
 
 def get_price_stat(query: dict, stat: str):
     client = VNStockClient(ticker=query["tickers"][0])
+    interval = query.get("interval") or "1d"
+    interval = interval.value if hasattr(
+        interval, "value") else interval
+
     df = client.fetch_trading_data(
         start=query.get("start"),
         end=query.get("end"),
-        interval=query.get("interval") or "1d",
+        interval=interval,
     )
     if stat == "min":
         return df[query["requested_field"]].min()
@@ -28,10 +32,14 @@ def get_price_stat(query: dict, stat: str):
 
 def get_aggregate_volume(query: dict, stat: str):
     client = VNStockClient(ticker=query["tickers"][0])
+    interval = query.get("interval") or "1d"
+    interval = interval.value if hasattr(
+        interval, "value") else interval
+
     df = client.fetch_trading_data(
         start=query.get("start"),
         end=query.get("end"),
-        interval=query.get("interval") or "1d",
+        interval=interval,
     )
 
     if stat == "sum":

@@ -11,11 +11,14 @@ def get_price_series(query: dict):
     """
     ticker = query["tickers"][0]
     field = query.get("requested_field")
+    interval = query.get("interval") or "1d"
+    interval = interval.value if hasattr(
+        interval, "value") else interval
 
     df = VNStockClient(ticker=ticker).fetch_trading_data(
         start=query.get("start"),
         end=query.get("end"),
-        interval=query.get("interval") or "1d",
+        interval=interval,
     )
 
     if df is None or df.empty:
