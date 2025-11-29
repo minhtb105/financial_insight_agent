@@ -45,7 +45,7 @@ def handle_price_query(parsed: Dict[str, Any]):
         if field == "ohlcv":
             return get_ohlcv(parsed)
 
-        if field in ("open_price", "close_price", "volume"):
+        if field in ("open", "close", "volume"):
             return get_price_field(parsed)
 
         return {"error": f"requested_field is invalid for price_query: {field}"}
