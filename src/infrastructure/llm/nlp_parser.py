@@ -98,7 +98,7 @@ class QueryParser:
                 - Nếu câu có từ khoá thống kê/ tổng hợp như: "tổng", "sum", "cộng dồn", "trung bình", "average", "avg", "bình quân", "nhỏ nhất", "thấp nhất", "cao nhất", "lớn nhất", "min", "max", "median" **VÀ** không bị bắt thành comparison/ranking theo luật trên → chọn aggregate_query.
                 - Bắt buộc gán aggregate theo mapping chính xác (KHÔNG để null):
                     - "tổng", "sum", "cộng dồn" → aggregate = "sum"
-                    - "trung bình", "average", "avg", "bình quân" → aggregate = "avg"
+                    - "trung bình", "average", "avg", "bình quân" → aggregate = "mean"
                     - "nhỏ nhất", "thấp nhất", "min" → aggregate = "min"
                     - "lớn nhất", "cao nhất", "max" → aggregate = "max"
                     - "median", "trung vị" → aggregate = "median"
@@ -118,7 +118,7 @@ class QueryParser:
                 --- KIỂM TRA BẮT BUỘC TRƯỚC KHI TRẢ:
                 1. Nếu query_type == "comparison_query": compare_with phải là LIST với >=1 phần tử. Nếu parser không tìm compare_with, KHÔNG trả comparison_query — fallback sang price_query.
                 2. Nếu query_type == "ranking_query": đảm bảo n_tickers >= 2; nếu không → chuyển thành price_query (nếu 1 mã) hoặc comparison_query (nếu có 'so sánh').
-                3. Nếu query_type == "aggregate_query": aggregate phải là 1 trong ["sum","avg","min","max","median","first","last"]. Nếu không xác định được → fallback = null nhưng XUẤT RA CẢNH BÁO nội bộ (không in ra), tuyệt đối không để aggregate=None khi câu rõ ràng có từ khóa aggregate.
+                3. Nếu query_type == "aggregate_query": aggregate phải là 1 trong ["sum","mean","min","max","median","first","last"]. Nếu không xác định được → fallback = null nhưng XUẤT RA CẢNH BÁO nội bộ (không in ra), tuyệt đối không để aggregate=None khi câu rõ ràng có từ khóa aggregate.
                 4. Nếu không chắc chắn giữa ranking vs comparison → dùng "so sánh" detection first (comparison override) và kiểm tra số lượng mã. Nếu vẫn ambiguous → chọn price_query cho 1 mã, comparison_query cho câu rõ "so sánh".
                 5. Tất cả các trường không applicable → phải là JSON null (không phải string "null").
 
