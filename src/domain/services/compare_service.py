@@ -12,7 +12,7 @@ Handle comparison_query: Compare price / volume between tickers
 def fetch_price_field(ticker: str, parsed: Dict[str, Any], col: str):
     """Fetch single price field (open/close/high/low) for ONE ticker."""
     client = VNStockClient(ticker=ticker)
-    df, _ = client.fetch_trading_data(
+    df = client.fetch_trading_data(
         start=parsed.get("start"),
         end=parsed.get("end"),
         interval=parsed.get("interval") or "1d",
@@ -30,7 +30,7 @@ def fetch_price_field(ticker: str, parsed: Dict[str, Any], col: str):
 def fetch_volume_sum(ticker: str, parsed: Dict[str, Any]):
     """Total traded volume."""
     client = VNStockClient(ticker=ticker)
-    df, _ = client.fetch_trading_data(
+    df = client.fetch_trading_data(
         start=parsed.get("start"),
         end=parsed.get("end"),
         interval=parsed.get("interval") or "1d",
@@ -45,7 +45,7 @@ def fetch_volume_sum(ticker: str, parsed: Dict[str, Any]):
 def fetch_ohlcv(ticker: str, parsed: Dict[str, Any]):
     """Return last 5 rows of OHLCV."""
     client = VNStockClient(ticker=ticker)
-    df, _ = client.fetch_trading_data(
+    df = client.fetch_trading_data(
         start=parsed.get("start"),
         end=parsed.get("end"),
         interval=parsed.get("interval") or "1d",
