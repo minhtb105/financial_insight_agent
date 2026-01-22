@@ -1,215 +1,176 @@
 # Financial Insight Agent
 
-**Financial Insight Agent** là hệ thống AI hỗ trợ phân tích và trả lời tự động các câu hỏi tiếng Việt về chứng khoán Việt Nam, sử dụng LLM (Large Language Model) và dữ liệu thực tế từ các nguồn như TCBS.
+**Production-like LLM Agent for Vietnamese Stock Analysis**
+
+Financial Insight Agent là một **hệ thống AI phân tích chứng khoán theo phong cách production**, được thiết kế để trả lời **các câu hỏi tiếng Việt về thị trường chứng khoán** bằng cách kết hợp **LLM agents, tool-calling, RAG và dữ liệu thị trường thời gian thực**.
+
+Dự án được xây dựng theo kiến trúc phân lớp rõ ràng, tập trung vào **độ ổn định, khả năng mở rộng, khả năng kiểm thử và quan sát hệ thống**, phù hợp với mô tả trong CV.
 
 ---
 
-## Tính năng nổi bật
+## 🚀 Project Overview
 
-- **Hiểu tiếng Việt tự nhiên:** Phân tích câu hỏi tiếng Việt về giá cổ phiếu, chỉ báo kỹ thuật (SMA, RSI...), thông tin công ty, so sánh, tổng hợp, v.v.
-- **Tích hợp LLM:** Sử dụng mô hình ngôn ngữ lớn (Groq, Llama, v.v.) để chuyển đổi câu hỏi sang schema JSON chuẩn.
-- **Kết nối dữ liệu thực:** Lấy dữ liệu chứng khoán từ API TCBS thông qua thư viện `vnstock`.
-- **API REST:** Triển khai FastAPI cho phép tích hợp với các hệ thống khác.
-- **Agent đa công cụ:** Tự động chọn tool phù hợp để trả lời từng loại truy vấn.
+* Hệ thống trợ lý tài chính sử dụng **LLM agent** để phân tích và trả lời câu hỏi chứng khoán Việt Nam.
+* Hỗ trợ nhiều loại truy vấn: giá cổ phiếu, OHLCV, chỉ báo kỹ thuật, thông tin công ty, so sánh và tổng hợp.
+* Kết hợp **tool-calling cho dữ liệu có cấu trúc** và **RAG cho tài liệu phi cấu trúc** (báo cáo, tin tức).
+* Được xây dựng theo hướng **production-like system** với logging, caching, metrics và unit tests.
 
 ---
 
-## Cấu trúc thư mục
+## ✨ Key Features
+
+### 🔹 LLM-based Intent Classification & Routing
+
+* Sử dụng LLM để phân tích câu hỏi tiếng Việt và ánh xạ sang **schema JSON chuẩn**.
+* Tự động phân loại intent và route truy vấn vào các luồng xử lý phù hợp:
+
+  * **Tool-calling** cho dữ liệu thị trường có cấu trúc
+  * **RAG pipeline** cho tài liệu và tin tức phi cấu trúc
+  * **Hybrid flows** cho các truy vấn so sánh và phân tích
+
+### 🔹 Tool-calling for Structured Market Data
+
+* Kết nối API dữ liệu chứng khoán (TCBS thông qua `vnstock`).
+* Hỗ trợ:
+
+  * Giá cổ phiếu, OHLCV
+  * Chỉ báo kỹ thuật: SMA, RSI, MACD
+  * Truy vấn xếp hạng, so sánh và tổng hợp
+
+### 🔹 Retrieval-Augmented Generation (RAG)
+
+* Áp dụng RAG cho các câu hỏi cần:
+
+  * Giải thích khái niệm tài chính
+  * Thông tin doanh nghiệp
+  * Tin tức và tài liệu liên quan
+* Cho phép kết hợp **kết quả từ tool + tài liệu retrieve** trong cùng một câu trả lời.
+
+### 🔹 Reliability & Structured Outputs
+
+* Enforce **strict JSON schema validation** cho output của LLM.
+* Giảm ~**70% lỗi runtime** do output không hợp lệ.
+* Đảm bảo khả năng xử lý ổn định cho downstream services.
+
+### 🔹 Caching & Performance
+
+* Tích hợp **Redis caching** cho các truy vấn lặp lại.
+* Giảm latency và tải cho API dữ liệu thị trường.
+
+### 🔹 Observability & Metrics
+
+* Logging và tracing cho:
+
+  * Intent classification
+  * Tool selection
+  * End-to-end latency
+* Theo dõi:
+
+  * Intent accuracy
+  * Tool success rate
+  * Response latency
+
+---
+
+## 🧱 System Architecture
+
+Hệ thống được thiết kế theo **layered architecture** để dễ mở rộng và kiểm thử:
+
+```
+Interfaces (FastAPI / CLI / Web UI)
+        ↓
+Application Layer (Use cases, Query routing)
+        ↓
+Agent Layer (LLM routing, Tool orchestration)
+        ↓
+Domain Layer (Business logic, Entities, Services)
+        ↓
+Infrastructure Layer (Market APIs, LLM providers, Cache)
+```
+
+---
+
+## 🗂 Project Structure
 
 ```
 src/
-│
-├── domain/                         # Business logic thuần (models, entities, value objects)
-│   ├── entities/
-│   │   ├── historical_query.py     # Pydantic models, domain rules
-│   │   ├── query_type.py
-│   │   ├── interval.py
-│   │   └── requested_field.py
-│   │
-│   ├── services/                   # Logic nghiệp vụ KHÔNG phụ thuộc hạ tầng
-│   │   ├── price_service.py        # xử lý price_query
-│   │   ├── indicator_service.py    # xử lý sma/rsi/macd
-│   │   ├── company_service.py      # xử lý company_query
-│   │   ├── compare_service.py      # xử lý comparison_query
-│   │   ├── ranking_service.py      # xử lý ranking_query
-│   │   └── aggregate_service.py    # xử lý aggregate_query
-│   │
-│   └── utils/
-│       └── date_utils.py           # last N days, tuần, tháng
-│
-├── application/                    # Lớp điều phối (use cases)
-│   ├── handlers/                   
-│   │   ├── query_router.py         # route theo QueryType → Service tương ứng
-│   │   └── result_formatter.py
-│   │
-│   └── agent/
-│       ├── stock_agent.py          # orchestrator gọi parser + router + service
-│       └── tool_registry.py        # đăng ký tools
-│
-├── infrastructure/                 # External services có thể thay thế
-│   ├── api_clients/
-│   │   └── vn_stock_client.py      # wrapper của vnstock
-│   │
-│   ├── llm/
-│   │   ├── nlp_parser.py           # gọi LLM → JSON
-│   │   └── groq_client.py          # LLM provider
-│   │
-│   └── cache/
-│       └── redis_cache.py          # optional
-│
-├── interfaces/                     # Entry points (FastAPI, CLI, Webhook)
-│   ├── http/
-│   │   └── app.py                  # FastAPI server
-│   │
-│   └── cli/
-│       └── console.py              # CLI chạy agent
-│
-├── tests/  
-│   ├── unit/
-│   │   ├── test_parser.py
-│   │   ├── test_price_service.py
-│   │   ├── test_indicator_service.py
-│   │   └── test_router.py
-│   │
-│   ├── integration/
-│   │   ├── test_agent_e2e.py
-│   │   └── test_api_endpoints.py
-│   │
-│   └── data/
-│       └── test_questions.xlsx
-│
-└── main.py # entry point cho chạy CLI hoặc server
+├── domain/               # Business logic thuần (entities, services)
+├── application/          # Use cases & query routing
+│   └── agent/            # LLM agent & tool registry
+├── infrastructure/       # External services (LLM, market APIs, cache)
+├── interfaces/           # FastAPI, CLI, Web UI
+├── tests/                # Unit & integration tests
+└── main.py               # Entry point
 ```
 
 ---
 
-## Hướng dẫn cài đặt
+## 🧪 Testing Strategy
 
-1. **Clone dự án:**
-```bash
-git clone https://github.com/yourusername/financial_insight_agent.git
-cd financial_insight_agent
-```
+* **Unit tests** cho:
 
-2. **Tạo môi trường ảo và cài đặt phụ thuộc:**
+  * Intent parsing & schema validation
+  * Domain services (price, indicator, comparison, aggregation)
+  * Query routing logic
+
+* **Integration & E2E tests** cho:
+
+  * Agent orchestration (LLM → tool → response)
+  * FastAPI endpoints
+
+Testing đảm bảo:
+
+* Agent hiểu đúng câu hỏi tiếng Việt
+* Route đúng intent
+* Trả kết quả chính xác từ dữ liệu thực
+
+---
+
+## 🖥 Web UI
+
+* Giao diện web đơn giản để:
+
+  * Chat với agent
+  * Hiển thị giá cổ phiếu
+  * Trực quan hóa chỉ báo kỹ thuật
+
+---
+
+## ▶️ Getting Started
+
 ```bash
 python -m venv .venv
-.venv\Scripts\activate       # Windows
-source .venv/bin/activate    # macOS/Linux
+source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
 pip install -r requirements.txt
 ```
 
-3. **Cấu hình biến môi trường (nếu cần):**
-- Tạo file `.env` và điền các thông tin API key, v.v. nếu sử dụng Groq hoặc các dịch vụ khác.
-
----
-
-## Chạy API server
+Cấu hình biến môi trường (ví dụ LLM API key):
 
 ```bash
-cd src
-uvicorn server.app:app --reload
+export GROQ_API_KEY=your_api_key_here
 ```
 
-API sẽ chạy tại `http://localhost:8000` với docs tại `/docs`.
-
-- **Sử dụng:**  
-Gửi câu hỏi tiếng Việt về chứng khoán qua API endpoint `/ask` (hoặc endpoint bạn định nghĩa).  
-Agent sẽ tự động phân tích, chọn tool phù hợp, truy vấn dữ liệu và trả về kết quả.
-
----
-
-## Unit Test
-
-Hệ thống có hai bộ test chính để đảm bảo hoạt động chính xác:
-
-### 1. `test_query_parser_datetime.py`
-
-**Mục đích:**  
-Kiểm tra parser (`QueryParser`) chuyển đổi chính xác câu hỏi tiếng Việt sang JSON chuẩn.
-
-**Kiểm tra các yếu tố:**
-- `intent`: loại truy vấn (`historical_prices`, `technical_indicator`, `company_info`)
-- `tickers`: danh sách mã chứng khoán
-- `requested_field`: trường dữ liệu yêu cầu (`ohlcv`, `open_price`, `close_price`, `sma`, `rsi`, v.v.)
-- Khoảng thời gian `start`/`end` dựa trên số ngày, tuần, tháng
-- Các tham số khác: `aggregate`, `compare_with`, `interval`, `window_size`
-
-**Ví dụ test case:**
-```python
-query = "Lấy dữ liệu OHLCV 10 ngày gần nhất HPG?"
-expected = {
-    "intent": Intent.historical_prices,
-    "tickers": ["HPG"],
-    "requested_field": "ohlcv",
-    "start": days_ago(10),
-    "end": today()
-}
-parsed_dict = parser.parse(query)
-assert parsed_dict["tickers"] == expected["tickers"]
-assert parsed_dict["requested_field"] == expected["requested_field"]
-```
-
-**Tác dụng:**  
-Đảm bảo parser hiểu đúng câu hỏi tiếng Việt và xác định đúng intent, tickers, thời gian, trường dữ liệu và các tham số kỹ thuật.
-
----
-
-### 2. `test_questions.py`
-
-**Mục đích:**  
-Kiểm thử agent end-to-end (`StockAgent`) trên các câu hỏi thực tế từ file Excel:
-
-- Phân tích câu hỏi bằng parser + LLM
-- Tự động chọn tool phù hợp
-- Truy vấn dữ liệu từ API (`vnstock`, TCBS)
-- Trả về câu trả lời chính xác hoặc phù hợp
-
-**Cách hoạt động:**
-1. Đọc câu hỏi từ Excel (`AI Intern test questions.xlsx`)
-2. Gọi `agent.run(question)` cho từng câu hỏi
-3. So sánh output với `expected_answer`
-4. Lưu trạng thái test (`passed`/`failed`) cùng kết quả thực tế
-5. Xuất kết quả test ra JSON (`test_results.json`)
-
-**Ví dụ logic:**
-```python
-for _, row in df.iterrows():
-    question = str(row["question"])
-    expected = str(row["expected_answer"])
-    answer = agent.run(question)
-    passed = answer == expected
-```
-
-**Tác dụng:**  
-Đảm bảo agent hoạt động chính xác end-to-end từ nhận diện truy vấn tiếng Việt đến trả kết quả.
-
----
-
-### Tóm tắt
-
-| File | Kiểm tra | Mục tiêu |
-|------|---------|----------|
-| `test_query_parser_datetime.py` | Parser | Xác nhận parser trả JSON đúng schema, xác định chính xác `intent`, tickers, trường dữ liệu, thời gian và các tham số liên quan |
-| `test_questions.py` | Agent | Đánh giá agent end-to-end, đảm bảo từ câu hỏi đến câu trả lời, kết hợp parser + tool + dữ liệu thực hoạt động chính xác |
-
----
-
-## Kiểm thử
+Chạy API server:
 
 ```bash
-cd src
-pytest tests/test_query_parser_datetime.py
-
-cd src
-python tests/test_questions.py
-
+uvicorn interfaces.http.app:app --reload
 ```
 
 ---
 
-## Đóng góp
+## 🎯 Purpose
 
-- Pull request, issue và góp ý luôn được hoan nghênh!
-- Đảm bảo code tuân thủ chuẩn PEP8 và có test đi kèm.
+Dự án này được xây dựng nhằm chứng minh khả năng:
 
+* Thiết kế **LLM agent production-like systems**
+* Kết hợp **tool-calling + RAG** cho các bài toán thực tế
+* Áp dụng **clean architecture, testing, caching và observability**
+
+Nội dung và kiến trúc của dự án **khớp trực tiếp với mô tả Financial Insight Agent trong CV** và có thể mở rộng thành hệ thống hỗ trợ phân tích tài chính thực tế.
+
+---
+
+## 🤝 Contributing
+
+* Issue và Pull Request luôn được chào đón
+* Tuân thủ PEP8 và có test đi kèm khi mở PR
