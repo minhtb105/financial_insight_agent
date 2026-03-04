@@ -6,5 +6,7 @@ src/infrastructure/llm/__pycache__/
 src/domain/__pycache__/
 src/domain/entities/__pycache__/
 src/domain/services/__pycache__/
+src/application/__pycache__/
+src/application/agent/__pycache__/
 .env
 .langgraph_api/
