@@ -3,7 +3,7 @@ Unit tests for QueryRouter.
 Uses relative imports for proper module resolution.
 """
 
-from ...application.handler.query_router import QueryRouter
+from application.handler.query_router import QueryRouter
 
 
 class TestQueryRouter:

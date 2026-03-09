@@ -3,7 +3,7 @@ Unit tests for EnhancedStockAgent.
 Uses relative imports for proper module resolution.
 """
 
-from ...application.agent.enhanced_agent import EnhancedStockAgent
+from application.agent.enhanced_agent import EnhancedStockAgent
 
 
 class TestEnhancedStockAgent:

@@ -3,10 +3,10 @@ Comprehensive test suite for query parsing functionality.
 Uses relative imports to avoid sys.path manipulation.
 """
 
-from ...infrastructure.llm.nlp_parser import QueryParser
-from ...infrastructure.llm.nlp_parser import EnhancedQueryParser
-from ...domain.entities.extended_query_type import ExtendedQueryType
-from ...domain.entities.extended_requested_field import ExtendedRequestedField
+from infrastructure.llm.nlp_parser import QueryParser
+from infrastructure.llm.nlp_parser import EnhancedQueryParser
+from domain.entities.extended_query_type import ExtendedQueryType
+from domain.entities.extended_requested_field import ExtendedRequestedField
 
 
 class TestQueryParserComprehensive:

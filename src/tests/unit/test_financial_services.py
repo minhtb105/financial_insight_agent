@@ -3,9 +3,9 @@ Unit tests for financial services.
 Uses relative imports for proper module resolution.
 """
 
-from ...domain.services.financial.financial_ratio_service import FinancialRatioService
-from ...domain.services.financial.aggregate_service import AggregateService
-from ...domain.services.financial.ranking_service import RankingService
+from domain.services.financial.financial_ratio_service import FinancialRatioService
+from domain.services.financial.aggregate_service import AggregateService
+from domain.services.financial.ranking_service import RankingService
 
 
 class TestFinancialRatioService:

@@ -3,7 +3,7 @@ Unit tests for TimeProcessor class.
 Uses relative imports for proper module resolution.
 """
 
-from ...domain.services.base.time_processor import TimeProcessor
+from domain.services.base.time_processor import TimeProcessor
 
 
 class TestTimeProcessor:

@@ -3,7 +3,7 @@ Unit tests for VNStockClient.
 Uses relative imports for proper module resolution.
 """
 
-from ...infrastructure.api_clients.vn_stock_client import VNStockClient
+from infrastructure.api_clients.vn_stock_client import VNStockClient
 
 
 class TestVNStockClient:

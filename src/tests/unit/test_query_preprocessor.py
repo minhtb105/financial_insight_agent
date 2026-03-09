@@ -3,7 +3,7 @@ Unit tests for QueryPreprocessor.
 Uses relative imports for proper module resolution.
 """
 
-from ...infrastructure.llm.query_preprocessor import QueryPreprocessor
+from infrastructure.llm.query_preprocessor import QueryPreprocessor
 
 
 class TestQueryPreprocessor:

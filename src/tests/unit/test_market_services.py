@@ -3,9 +3,9 @@ Unit tests for market services.
 Uses relative imports for proper module resolution.
 """
 
-from ...domain.services.market.compare_service import CompareService
-from ...domain.services.market.indicator_service import IndicatorService
-from ...domain.services.market.price_service import PriceService
+from domain.services.market.compare_service import CompareService
+from domain.services.market.indicator_service import IndicatorService
+from domain.services.market.price_service import PriceService
 
 
 class TestCompareService:

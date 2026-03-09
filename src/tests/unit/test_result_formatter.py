@@ -3,7 +3,7 @@ Unit tests for ResultFormatter.
 Uses relative imports for proper module resolution.
 """
 
-from ...application.handler.result_formatter import ResultFormatter
+from application.handler.result_formatter import ResultFormatter
 
 
 class TestResultFormatter:

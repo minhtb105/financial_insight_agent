@@ -3,8 +3,8 @@ Unit tests for portfolio services.
 Uses relative imports for proper module resolution.
 """
 
-from ...domain.services.portfolio.news_sentiment_service import NewsSentimentService
-from ...domain.services.portfolio.news_sentiment_service import PortfolioService
+from domain.services.portfolio.news_sentiment_service import NewsSentimentService
+from domain.services.portfolio.news_sentiment_service import PortfolioService
 
 
 class TestNewsSentimentService:
