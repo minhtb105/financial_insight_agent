@@ -1,12 +1,10 @@
-from langsmith import Client
+from langsmith import evaluate
 from infrastructure.llm.nlp_parser import QueryParser
 
 
-client = Client()
 parser = QueryParser()
 
 test_cases = [
-
     # 1) PRICE QUERY - 20 questions
     "Lấy giá mở cửa của VCB hôm qua.",
     "Lấy giá đóng cửa của HPG hôm nay.",
@@ -30,26 +28,26 @@ test_cases = [
     "Lịch sử giá đóng của MBB trong 2 tuần vừa qua.",
 
     # 2) INDICATOR QUERY – 20 questions
-    "Tính SMA9 cho VCB trong 1 tuần gần nhất."
-    "Cho tôi SMA20 của HPG trong 2 tuần gần đây."
-    "SMA50 của VIC từ đầu tháng 10 đến nay."
-    "Tính SMA9 và SMA20 cho VHM trong 1 tháng qua."
-    "Cho tôi SMA14 và SMA21 của SSI trong 3 tuần gần đây."
-    "SMA9 của TCB trong 1 tuần với timeframe 1m."
-    "SMA9 và SMA20 của STB từ đầu tháng đến nay."
-    "Tính SMA200 cho VIC trong 6 tháng gần nhất."
-    "Cho tôi SMA9 và SMA18 của VCG trong 20 phiên gần đây."
-    "Tính SMA9 của MSB từ đầu quý 4."
-    "RSI14 của VCB trong 2 tuần gần nhất."
-    "Tính RSI14 và RSI28 cho HPG từ đầu năm đến nay."
-    "Cho tôi RSI7 của GAS trong tuần này."
-    "RSI14 của VNM ngày hôm qua."
-    "Tính RSI14 và SMA9 cho VCI trong 10 phiên gần nhất."
-    "Cho tôi RSI7, RSI14 và SMA21 cho HPG trong 15 phiên gần nhất."
-    "Tính RSI14 của REE trong 2 tuần gần đây."
-    "Tính MACD của FPT trong giai đoạn từ tháng 9 đến tháng 10."
-    "MACD của MWG trong 2 tháng gần đây."
-    "Tính MACD của PNJ trong 1 tháng vừa qua."
+    "Tính SMA9 cho VCB trong 1 tuần gần nhất.",
+    "Cho tôi SMA20 của HPG trong 2 tuần gần đây.",
+    "SMA50 của VIC từ đầu tháng 10 đến nay.",
+    "Tính SMA9 và SMA20 cho VHM trong 1 tháng qua.",
+    "Cho tôi SMA14 và SMA21 của SSI trong 3 tuần gần đây.",
+    "SMA9 của TCB trong 1 tuần với timeframe 1m.",
+    "SMA9 và SMA20 của STB từ đầu tháng đến nay.",
+    "Tính SMA200 cho VIC trong 6 tháng gần nhất.",
+    "Cho tôi SMA9 và SMA18 của VCG trong 20 phiên gần đây.",
+    "Tính SMA9 của MSB từ đầu quý 4.",
+    "RSI14 của VCB trong 2 tuần gần nhất.",
+    "Tính RSI14 và RSI28 cho HPG từ đầu năm đến nay.",
+    "Cho tôi RSI7 của GAS trong tuần này.",
+    "RSI14 của VNM ngày hôm qua.",
+    "Tính RSI14 và SMA9 cho VCI trong 10 phiên gần nhất.",
+    "Cho tôi RSI7, RSI14 và SMA21 cho HPG trong 15 phiên gần nhất.",
+    "Tính RSI14 của REE trong 2 tuần gần đây.",
+    "Tính MACD của FPT trong giai đoạn từ tháng 9 đến tháng 10.",
+    "MACD của MWG trong 2 tháng gần đây.",
+    "Tính MACD của PNJ trong 1 tháng vừa qua.",
 
     # 3) COMPANY QUERY – 15 questions
     "Danh sách cổ đông lớn của VCB.",
@@ -120,13 +118,14 @@ test_cases = [
     "Tổng khối lượng giao dịch của nhóm HPG, HSG, NKG trong 10 ngày."
 ]
 
-client.run_evaluators(
+# Use the new evaluate API
+evaluate(
+    target=lambda query: parser.parse(query),
     data=test_cases,
-    run_handler=lambda query: parser.parse(query),
     evaluators=[
         "json_valid",
         "has_field:tickers",
         "enum_valid:query_type",
     ],
-    project_name="financial-nlp-parser",
+    experiment_name="financial-nlp-parser"
 )

@@ -1,11 +1,8 @@
-# application/handlers/query_router.py
-
 from typing import Any, Dict
 
 from domain.entities.query_type import QueryType
-from .result_formatter import ok, fail
+from application.handler.result_formatter import ok, fail
 
-# Import các service thuộc domain
 from domain.services.market.price_service import handle_price_query
 from domain.services.market.indicator_service import handle_indicator_query
 from domain.services.company.company_service import handle_company_query
@@ -17,7 +14,7 @@ from domain.services.financial.aggregate_service import handle_aggregate_query
 class QueryRouter:
 
     def __init__(self):
-        # Có thể dùng nếu sau này bạn DI (Dependency Injection)
+        # Có thể dùng DI (Dependency Injection)
         pass
 
     def dispatch(self, parsed: Dict[str, Any]) -> Dict[str, Any]:

@@ -7,7 +7,7 @@ It provides functionality to calculate and analyze financial ratios for companie
 
 from typing import Dict, Any, List
 from infrastructure.api_clients.vn_stock_client import VNStockClient
-from ..base.time_processor import TimeProcessor
+from domain.services.base.time_processor import TimeProcessor
 
 
 def handle_financial_ratio_query(parsed: Dict[str, Any]) -> Dict[str, Any]:

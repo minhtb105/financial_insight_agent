@@ -1,10 +1,4 @@
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
-
-from infrastructure.llm.enhanced_nlp_parser import EnhancedQueryParser
-from domain.entities.extended_query_type import ExtendedQueryType
-from domain.entities.extended_requested_field import ExtendedRequestedField
+from infrastructure.llm.nlp_parser import EnhancedQueryParser
 
 
 def test_enhanced_parser():

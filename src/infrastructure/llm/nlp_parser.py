@@ -6,7 +6,7 @@ from domain.entities.historical_query import HistoricalQuery
 from datetime import datetime
 import re
 from typing import Dict, Any, Tuple
-from .query_preprocessor import QueryPreprocessor
+from infrastructure.llm.query_preprocessor import QueryPreprocessor
 
 
 class QueryParser:

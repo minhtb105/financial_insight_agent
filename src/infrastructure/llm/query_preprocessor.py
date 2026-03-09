@@ -1,6 +1,6 @@
+import datetime
 import re
-from typing import Dict, List, Any, Optional, Tuple
-from datetime import datetime, timedelta
+from typing import Dict, List, Any, Optional
 
 
 class QueryPreprocessor:
@@ -212,6 +212,7 @@ class QueryPreprocessor:
     def detect_query_type(self, query: str, tickers: List[str]) -> str:
         """Detect query type based on keywords and patterns."""
         query_lower = query.lower()
+        query_upper = query.upper()
         
         # Check for comparison first (highest priority)
         for keyword in self.comparison_keywords:

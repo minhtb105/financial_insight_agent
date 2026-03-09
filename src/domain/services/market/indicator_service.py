@@ -8,7 +8,7 @@ It provides functionality to calculate and process various technical indicators.
 from typing import Dict, Any, List
 import pandas as pd
 from infrastructure.api_clients.vn_stock_client import VNStockClient
-from ..base.time_processor import TimeProcessor
+from domain.services.base.time_processor import TimeProcessor
 
 
 def handle_indicator_query(parsed: Dict[str, Any]) -> Dict[str, Any]:

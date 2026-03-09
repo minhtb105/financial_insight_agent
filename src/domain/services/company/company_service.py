@@ -5,7 +5,7 @@ This module contains the service for handling company-related queries.
 It provides functionality to fetch and process company information.
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any
 from infrastructure.api_clients.vn_stock_client import VNStockClient
 
 

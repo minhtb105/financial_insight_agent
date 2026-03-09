@@ -2,7 +2,6 @@ import re
 from typing import List
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_groq import ChatGroq
-from domain.entities.multi_query import MultiQuery
 
 
 class HybridQuerySplitter:
