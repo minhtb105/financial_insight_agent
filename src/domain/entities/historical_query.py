@@ -42,7 +42,7 @@ class HistoricalQuery(BaseModel):
     
     class Config:
         """Pydantic configuration."""
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "tickers": ["VCB", "HPG"],
                 "query_type": "price_query",
