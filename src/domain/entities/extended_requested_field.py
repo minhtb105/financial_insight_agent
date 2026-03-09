@@ -1,0 +1,187 @@
+from enum import Enum
+
+
+class FinancialRatioField(str, Enum):
+    """Financial ratio fields for company analysis."""
+    pe = "pe"           # Price to Earnings
+    pb = "pb"           # Price to Book
+    roe = "roe"         # Return on Equity
+    eps = "eps"         # Earnings Per Share
+    roa = "roa"         # Return on Assets
+    debt_to_equity = "debt_to_equity"
+    current_ratio = "current_ratio"
+    quick_ratio = "quick_ratio"
+    dividend_yield = "dividend_yield"
+    operating_margin = "operating_margin"
+    net_margin = "net_margin"
+    revenue_growth = "revenue_growth"
+    eps_growth = "eps_growth"
+
+
+class MarketDataField(str, Enum):
+    """Extended market data fields."""
+    market_cap = "market_cap"         # Vốn hóa thị trường
+    beta = "beta"                     # Hệ số beta
+    turnover_rate = "turnover_rate"   # Tỷ lệ luân chuyển
+    foreign_ownership = "foreign_ownership"  # Tỷ lệ sở hữu nước ngoài
+    free_float = "free_float"         # Tỷ lệ free float
+    institutional_ownership = "institutional_ownership"
+    retail_ownership = "retail_ownership"
+
+
+class ExtendedIndicatorField(str, Enum):
+    """Extended technical indicator fields."""
+    bollinger_bands = "bb"      # Bollinger Bands
+    stochastic = "stochastic"   # Stochastic Oscillator
+    adx = "adx"                 # Average Directional Index
+    atr = "atr"                 # Average True Range
+    obv = "obv"                 # On-Balance Volume
+    cci = "cci"                 # Commodity Channel Index
+    williams_r = "williams_r"   # Williams %R
+    ultosc = "ultosc"           # Ultimate Oscillator
+    mfi = "mfi"                 # Money Flow Index
+    chaikin_osc = "chaikin_osc" # Chaikin Oscillator
+    vwap = "vwap"               # Volume Weighted Average Price
+
+
+class NewsSentimentField(str, Enum):
+    """News and sentiment analysis fields."""
+    news = "news"               # Tin tức
+    sentiment = "sentiment"     # Cảm xúc thị trường
+    social_volume = "social_volume"  # Khối lượng thảo luận trên mạng xã hội
+    news_sentiment_score = "news_sentiment_score"
+    social_sentiment_score = "social_sentiment_score"
+    news_volume = "news_volume"
+
+
+class PortfolioField(str, Enum):
+    """Portfolio management fields."""
+    portfolio_value = "portfolio_value"
+    portfolio_performance = "portfolio_performance"
+    portfolio_allocation = "portfolio_allocation"
+    portfolio_risk = "portfolio_risk"
+    portfolio_diversification = "portfolio_diversification"
+    portfolio_turnover = "portfolio_turnover"
+
+
+class AlertField(str, Enum):
+    """Alert and monitoring fields."""
+    price_alert = "price_alert"
+    volume_alert = "volume_alert"
+    technical_alert = "technical_alert"
+    news_alert = "news_alert"
+    sentiment_alert = "sentiment_alert"
+    portfolio_alert = "portfolio_alert"
+
+
+class ForecastField(str, Enum):
+    """Forecast and trend analysis fields."""
+    price_forecast = "price_forecast"
+    trend_analysis = "trend_analysis"
+    support_resistance = "support_resistance"
+    momentum_forecast = "momentum_forecast"
+    volatility_forecast = "volatility_forecast"
+    risk_forecast = "risk_forecast"
+
+
+class SectorField(str, Enum):
+    """Sector and industry analysis fields."""
+    sector_performance = "sector_performance"
+    sector_allocation = "sector_allocation"
+    sector_rotation = "sector_rotation"
+    industry_analysis = "industry_analysis"
+    peer_comparison = "peer_comparison"
+    sector_sentiment = "sector_sentiment"
+
+
+class ExtendedRequestedField(str, Enum):
+    """Combined extended requested fields."""
+    
+    # Original fields (for backward compatibility)
+    open = "open"
+    close = "close"
+    volume = "volume"
+    ohlcv = "ohlcv"
+    sma = "sma"
+    rsi = "rsi"
+    macd = "macd"
+    shareholders = "shareholders"
+    subsidiaries = "subsidiaries"
+    executives = "executives"
+    
+    # Financial ratios
+    pe = "pe"
+    pb = "pb"
+    roe = "roe"
+    eps = "eps"
+    roa = "roa"
+    debt_to_equity = "debt_to_equity"
+    current_ratio = "current_ratio"
+    quick_ratio = "quick_ratio"
+    dividend_yield = "dividend_yield"
+    operating_margin = "operating_margin"
+    net_margin = "net_margin"
+    revenue_growth = "revenue_growth"
+    eps_growth = "eps_growth"
+    
+    # Market data
+    market_cap = "market_cap"
+    beta = "beta"
+    turnover_rate = "turnover_rate"
+    foreign_ownership = "foreign_ownership"
+    free_float = "free_float"
+    institutional_ownership = "institutional_ownership"
+    retail_ownership = "retail_ownership"
+    
+    # Extended indicators
+    bollinger_bands = "bb"
+    stochastic = "stochastic"
+    adx = "adx"
+    atr = "atr"
+    obv = "obv"
+    cci = "cci"
+    williams_r = "williams_r"
+    ultosc = "ultosc"
+    mfi = "mfi"
+    chaikin_osc = "chaikin_osc"
+    vwap = "vwap"
+    
+    # News and sentiment
+    news = "news"
+    sentiment = "sentiment"
+    social_volume = "social_volume"
+    news_sentiment_score = "news_sentiment_score"
+    social_sentiment_score = "social_sentiment_score"
+    news_volume = "news_volume"
+    
+    # Portfolio
+    portfolio_value = "portfolio_value"
+    portfolio_performance = "portfolio_performance"
+    portfolio_allocation = "portfolio_allocation"
+    portfolio_risk = "portfolio_risk"
+    portfolio_diversification = "portfolio_diversification"
+    portfolio_turnover = "portfolio_turnover"
+    
+    # Alerts
+    price_alert = "price_alert"
+    volume_alert = "volume_alert"
+    technical_alert = "technical_alert"
+    news_alert = "news_alert"
+    sentiment_alert = "sentiment_alert"
+    portfolio_alert = "portfolio_alert"
+    
+    # Forecasts
+    price_forecast = "price_forecast"
+    trend_analysis = "trend_analysis"
+    support_resistance = "support_resistance"
+    momentum_forecast = "momentum_forecast"
+    volatility_forecast = "volatility_forecast"
+    risk_forecast = "risk_forecast"
+    
+    # Sectors
+    sector_performance = "sector_performance"
+    sector_allocation = "sector_allocation"
+    sector_rotation = "sector_rotation"
+    industry_analysis = "industry_analysis"
+    peer_comparison = "peer_comparison"
+    sector_sentiment = "sector_sentiment"

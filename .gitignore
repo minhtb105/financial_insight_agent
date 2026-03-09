@@ -1,12 +1,33 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
 .venv/
 src/financial_insight_agent.egg-info/
-src/infrastructure/__pycache__/
-src/infrastructure/api_clients/__pycache__/
-src/infrastructure/llm/__pycache__/
-src/domain/__pycache__/
-src/domain/entities/__pycache__/
-src/domain/services/__pycache__/
-src/application/__pycache__/
-src/application/agent/__pycache__/
 .env
 .langgraph_api/

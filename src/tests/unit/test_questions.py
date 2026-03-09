@@ -1,9 +1,13 @@
 import json
 import pandas as pd 
-from server.agent import StockAgent
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from application.agent.agent import StockAgent
 
 
-EXCEL_PATH = "src/tests/AI Intern test questions.xlsx"
+EXCEL_PATH = "src/tests/data/Test questions.xlsx"
 JSON_REPORT_PATH = "src/tests/test_results.json"
 
 def run_tests_from_excel():
@@ -34,7 +38,7 @@ def run_tests_from_excel():
         })
 
         status = "PASS" if passed else "FAIL"
-        print(f"[{status}] Question: {question}\nActual Answer:\n{answer}\n")
+        print(f"[{status}] Question: {question}\nActual Answer:\n{answer}\n", flush=True)
 
     # 3. Lưu kết quả ra JSON
     with open(JSON_REPORT_PATH, "w", encoding="utf-8") as f:

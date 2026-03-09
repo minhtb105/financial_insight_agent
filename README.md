@@ -1,4 +1,4 @@
-# Financial Insight Agent
+# Enhanced Financial Insight Agent
 
 **Production-like LLM Agent for Vietnamese Stock Analysis**
 
@@ -70,6 +70,45 @@ Dự án được xây dựng theo kiến trúc phân lớp rõ ràng, tập tru
   * Tool success rate
   * Response latency
 
+### 🔹 Enhanced Features
+
+#### Rule-based Preprocessing
+- **Ticker extraction** with validation against known Vietnamese tickers
+- **Time parameter extraction** (days, weeks, months, years)
+- **Indicator parameter extraction** (SMA, EMA, RSI, MACD, etc.)
+- **Query type detection** based on keywords and patterns
+- **Auto-correction** for common ticker typos
+- **Confidence scoring** for preprocessing results
+
+#### Extended Query Types
+- `financial_ratio_query`: P/E, ROE, EPS, etc.
+- `news_sentiment_query`: News, sentiment, social volume
+- `portfolio_query`: Portfolio value, performance, allocation
+- `alert_query`: Price alerts, volume alerts, technical alerts
+- `forecast_query`: Price forecasts, trend analysis
+- `sector_query`: Sector performance, industry analysis
+
+#### Extended Requested Fields
+- **Financial ratios**: PE, PB, ROE, EPS, ROA, debt_to_equity, etc.
+- **Market data**: market_cap, beta, turnover_rate, foreign_ownership
+- **Extended indicators**: bollinger_bands, stochastic, adx, atr, obv, etc.
+- **News & sentiment**: news, sentiment, social_volume, news_sentiment_score
+- **Portfolio**: portfolio_value, portfolio_performance, portfolio_allocation
+- **Alerts**: price_alert, volume_alert, technical_alert, news_alert
+- **Forecasts**: price_forecast, trend_analysis, support_resistance
+- **Sectors**: sector_performance, sector_allocation, sector_rotation
+
+#### New Services
+- **Financial Ratio Service**: Get individual financial ratios (P/E, ROE, EPS, etc.)
+- **News & Sentiment Service**: Fetch financial news and analyze sentiment
+- **Portfolio Service**: Manage user portfolio and calculate performance
+
+#### Enhanced Agent
+- **Confidence-based approach**: Uses preprocessing confidence to guide LLM
+- **Adaptive thresholds**: Adjusts confidence thresholds based on query complexity
+- **Enhanced tool selection**: Better tool selection based on query type and confidence
+- **Improved error handling**: Graceful degradation when confidence is low
+
 ---
 
 ## 🧱 System Architecture
@@ -77,15 +116,42 @@ Dự án được xây dựng theo kiến trúc phân lớp rõ ràng, tập tru
 Hệ thống được thiết kế theo **layered architecture** để dễ mở rộng và kiểm thử:
 
 ```
-Interfaces (FastAPI / CLI / Web UI)
-        ↓
-Application Layer (Use cases, Query routing)
-        ↓
-Agent Layer (LLM routing, Tool orchestration)
-        ↓
-Domain Layer (Business logic, Entities, Services)
-        ↓
-Infrastructure Layer (Market APIs, LLM providers, Cache)
+Enhanced Financial Insight Agent
+├── infrastructure/
+│   ├── llm/
+│   │   ├── nlp_parser.py (original parser)
+│   │   ├── query_preprocessor.py (NEW: rule-based preprocessing)
+│   │   └── enhanced_nlp_parser.py (NEW: enhanced parser)
+│   └── api_clients/
+│       └── vn_stock_client.py
+├── domain/
+│   ├── entities/
+│   │   ├── historical_query.py
+│   │   ├── extended_query_type.py (NEW: extended query types)
+│   │   └── extended_requested_field.py (NEW: extended fields)
+│   └── services/
+│       ├── price_service.py
+│       ├── indicator_service.py
+│       ├── company_service.py
+│       ├── compare_service.py
+│       ├── ranking_service.py
+│       ├── aggregate_service.py
+│       ├── financial_ratio_service.py (NEW)
+│       ├── news_sentiment_service.py (NEW)
+│       └── portfolio_service.py (NEW)
+├── application/
+│   └── agent/
+│       ├── tool_registry.py (original tools)
+│       └── enhanced_tool_registry.py (NEW: enhanced tools)
+│       └── enhanced_agent.py (NEW: enhanced agent)
+└── tests/
+    ├── unit/
+    │   ├── test_query_parser.py
+    │   └── test_enhanced_parser.py (NEW)
+    └── integration/
+        ├── test_agent_e2e.py
+        ├── test_enhanced_agent.py (NEW)
+        └── test_full_system.py (NEW)
 ```
 
 ---
@@ -95,9 +161,18 @@ Infrastructure Layer (Market APIs, LLM providers, Cache)
 ```
 src/
 ├── domain/               # Business logic thuần (entities, services)
+│   ├── entities/         # Query types, requested fields, historical queries
+│   └── services/         # Domain services (price, indicator, company, etc.)
+│       ├── base/         # Base services and utilities
+│       ├── financial/    # Financial ratio and aggregation services
+│       ├── market/       # Price, indicator, and comparison services
+│       ├── portfolio/    # Portfolio and news sentiment services
+│       └── company/      # Company information services
 ├── application/          # Use cases & query routing
 │   └── agent/            # LLM agent & tool registry
 ├── infrastructure/       # External services (LLM, market APIs, cache)
+│   ├── llm/              # NLP parsers and query preprocessing
+│   └── api_clients/      # Market data API clients
 ├── interfaces/           # FastAPI, CLI, Web UI
 ├── tests/                # Unit & integration tests
 └── main.py               # Entry point
@@ -112,17 +187,21 @@ src/
   * Intent parsing & schema validation
   * Domain services (price, indicator, comparison, aggregation)
   * Query routing logic
+  * Enhanced parser and preprocessing
 
 * **Integration & E2E tests** cho:
 
   * Agent orchestration (LLM → tool → response)
   * FastAPI endpoints
+  * Enhanced agent functionality
+  * Full system integration
 
 Testing đảm bảo:
 
 * Agent hiểu đúng câu hỏi tiếng Việt
 * Route đúng intent
 * Trả kết quả chính xác từ dữ liệu thực
+* Enhanced features work correctly
 
 ---
 
@@ -156,6 +235,37 @@ Chạy API server:
 uvicorn interfaces.http.app:app --reload
 ```
 
+### Enhanced Agent Usage
+
+```python
+from application.agent.enhanced_agent import EnhancedStockAgent
+
+agent = EnhancedStockAgent()
+agent.run("Tỷ lệ P/E của VNM hiện tại là bao nhiêu?")
+```
+
+### New Query Types
+
+```python
+# Financial ratio query
+"PE của VNM hiện tại là bao nhiêu?"
+
+# News sentiment query
+"Có tin tức gì về VCB trong tuần này không?"
+
+# Portfolio query
+"Nếu tôi mua 100 cổ FPT thì danh mục hiện tại ra sao?"
+
+# Alert query
+"Cảnh báo khi giá HPG vượt ngưỡng 50.000"
+
+# Forecast query
+"Dự báo giá VNM trong tuần tới"
+
+# Sector query
+"Các cổ phiếu ngành chứng khoán có performance tốt nhất tuần này?"
+```
+
 ---
 
 ## 🎯 Purpose
@@ -165,6 +275,8 @@ Dự án này được xây dựng nhằm chứng minh khả năng:
 * Thiết kế **LLM agent production-like systems**
 * Kết hợp **tool-calling + RAG** cho các bài toán thực tế
 * Áp dụng **clean architecture, testing, caching và observability**
+* **Enhanced preprocessing** with rule-based extraction and confidence scoring
+* **Extended functionality** for comprehensive financial analysis
 
 Nội dung và kiến trúc của dự án **khớp trực tiếp với mô tả Financial Insight Agent trong CV** và có thể mở rộng thành hệ thống hỗ trợ phân tích tài chính thực tế.
 
@@ -174,3 +286,4 @@ Nội dung và kiến trúc của dự án **khớp trực tiếp với mô tả
 
 * Issue và Pull Request luôn được chào đón
 * Tuân thủ PEP8 và có test đi kèm khi mở PR
+* Đảm bảo backward compatibility cho các tính năng hiện có

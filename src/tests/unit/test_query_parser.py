@@ -10,19 +10,19 @@ test_cases = [
     # 1) PRICE QUERY - 20 questions
     "Lấy giá mở cửa của VCB hôm qua.",
     "Lấy giá đóng cửa của HPG hôm nay.",
-    "Cho tôi giá cao nhất của VIC trong ngày.",
-    "Lấy giá thấp nhất của TCB phiên trước.",
+    "Cho tôi giá chốt của VIC trong ngày.",
+    "Lấy lịch sử close của TCB phiên trước.",
     "Lấy dữ liệu OHLCV của HPG 10 ngày gần nhất.",
     "Lấy OHLCV của VHM trong vòng 2 tuần qua.",
     "Lấy khối lượng giao dịch của MSN hôm nay.",
-    "Lấy lịch sử giá mở cửa của SSI trong 30 ngày gần nhất.",
+    "Lấy lịch sử open của SSI trong 30 ngày gần nhất.",
     "Lấy giá đóng của MWG tuần trước.",
     "Lấy dữ liệu OHLCV của STB từ đầu năm đến nay.",
     "Tra cứu giá mở cửa của GAS ngày 1/11/2024.",
     "Lấy giá đóng của FPT từ 1/10 đến 15/10.",
     "Lấy volume của VPB hôm nay.",
     "Lấy dữ liệu OHLCV của PLX trong 1 tháng gần đây.",
-    "Tra cứu giá thấp nhất của BVH vào ngày 2/11.",
+    "Tra cứu giá chốt của BVH vào ngày 2/11.",
     "Giá mở cửa của VCB phiên gần nhất.",
     "Giá đóng của VIC trong 5 ngày vừa rồi.",
     "Khối lượng giao dịch của HPG trong 3 ngày qua.",
@@ -30,26 +30,26 @@ test_cases = [
     "Lịch sử giá đóng của MBB trong 2 tuần vừa qua.",
 
     # 2) INDICATOR QUERY – 20 questions
-    "Tính SMA9 cho VCB trong 10 ngày gần nhất.",
-    "Tính SMA20 cho HPG trong 2 tuần gần đây.",
-    "Tính SMA50 của VIC từ đầu tháng 10.",
-    "Tính SMA9 và SMA20 cho VHM trong 1 tháng với timeframe 1d.",
-    "Tính SMA14 và SMA21 của SSI trong 3 tuần.",
-    "Tính RSI14 của VCB trong 2 tuần.",
-    "Tính RSI14 và RSI28 cho HPG từ đầu năm.",
-    "Cho tôi RSI7 của GAS tuần này.",
-    "Tính RSI14 của VNM ngày hôm qua.",
-    "Tính MACD của FPT từ tháng 9 đến tháng 10.",
-    "MACD của MWG trong 2 tháng gần đây.",
-    "Cho tôi SMA9 của TCB trong 1 tuần theo timeframe 1m.",
-    "SMA9 và SMA20 của STB từ đầu tháng đến nay.",
-    "Tính RSI14 và SMA9 cho VCI trong 10 ngày.",
-    "Tính SMA200 cho VIC trong 6 tháng.",
-    "Tính MACD của PNJ trong 1 tháng.",
-    "Cho tôi RSI7 và RSI14 cho HPG trong 15 ngày.",
-    "Tính SMA9 và SMA18 của VCG trong 20 ngày.",
-    "Tính SMA9 của MSB từ đầu quý 4.",
-    "Tính RSI14 của REE trong 10 ngày vừa qua.",
+    "Tính SMA9 cho VCB trong 1 tuần gần nhất."
+    "Cho tôi SMA20 của HPG trong 2 tuần gần đây."
+    "SMA50 của VIC từ đầu tháng 10 đến nay."
+    "Tính SMA9 và SMA20 cho VHM trong 1 tháng qua."
+    "Cho tôi SMA14 và SMA21 của SSI trong 3 tuần gần đây."
+    "SMA9 của TCB trong 1 tuần với timeframe 1m."
+    "SMA9 và SMA20 của STB từ đầu tháng đến nay."
+    "Tính SMA200 cho VIC trong 6 tháng gần nhất."
+    "Cho tôi SMA9 và SMA18 của VCG trong 20 phiên gần đây."
+    "Tính SMA9 của MSB từ đầu quý 4."
+    "RSI14 của VCB trong 2 tuần gần nhất."
+    "Tính RSI14 và RSI28 cho HPG từ đầu năm đến nay."
+    "Cho tôi RSI7 của GAS trong tuần này."
+    "RSI14 của VNM ngày hôm qua."
+    "Tính RSI14 và SMA9 cho VCI trong 10 phiên gần nhất."
+    "Cho tôi RSI7, RSI14 và SMA21 cho HPG trong 15 phiên gần nhất."
+    "Tính RSI14 của REE trong 2 tuần gần đây."
+    "Tính MACD của FPT trong giai đoạn từ tháng 9 đến tháng 10."
+    "MACD của MWG trong 2 tháng gần đây."
+    "Tính MACD của PNJ trong 1 tháng vừa qua."
 
     # 3) COMPANY QUERY – 15 questions
     "Danh sách cổ đông lớn của VCB.",
