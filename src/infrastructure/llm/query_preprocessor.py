@@ -20,35 +20,20 @@ class QueryPreprocessor:
             'HNG', 'TTF', 'VCG', 'MSB', 'SAB', 'VJC', 'ACV', 'SBT', 'VGC', 'VIB'
         }
         
-        # Time patterns
+        # Time patterns - Keep minimal patterns for fallback only
+        # Main time extraction will be done by LLM
         self.time_patterns = {
             'days': [
                 (r'(\d+)\s*(ngày|day)', lambda m: int(m.group(1))),
-                (r'hôm qua', lambda m: 1),
-                (r'hôm nay', lambda m: 1),
-                (r'ngày hôm qua', lambda m: 1),
-                (r'ngày hôm nay', lambda m: 1),
             ],
             'weeks': [
                 (r'(\d+)\s*(tuần|week)', lambda m: int(m.group(1))),
-                (r'tuần trước', lambda m: 1),
-                (r'tuần này', lambda m: 1),
-                (r'tuần vừa rồi', lambda m: 1),
             ],
             'months': [
                 (r'(\d+)\s*(tháng|month)', lambda m: int(m.group(1))),
-                (r'tháng trước', lambda m: 1),
-                (r'tháng này', lambda m: 1),
-                (r'tháng vừa rồi', lambda m: 1),
-                (r'quý 4', lambda m: 3),  # Quý 4 = 3 tháng
-                (r'quý 3', lambda m: 3),
-                (r'quý 2', lambda m: 3),
-                (r'quý 1', lambda m: 3),
             ],
             'years': [
                 (r'(\d+)\s*(năm|year)', lambda m: int(m.group(1))),
-                (r'năm trước', lambda m: 1),
-                (r'năm nay', lambda m: 1),
             ]
         }
         

@@ -222,6 +222,15 @@ class QueryParser:
             Thông tin đã được xử lý trước (có thể có lỗi):
             {preprocessed}
 
+            QUY TẮC THỜI GIAN:
+            - "X ngày gần nhất / trong X ngày / X ngày vừa rồi" → days = X, start = {today} - X ngày, end = {today}
+            - "X tuần", "trong X tuần" → weeks = X, start = {today} - X tuần, end = {today}
+            - "X tháng", "trong X tháng" → months = X, start = {today} - X tháng, end = {today}
+            - Nếu user nêu rõ start và end → giữ nguyên start/end (định dạng "YYYY-MM-DD").
+            - Nếu end không nêu rõ → end = {today}
+            - Nếu không có thông tin thời gian → start = null, end = null, days/weeks/months = null
+            - **Luôn** trả start/end ở định dạng "YYYY-MM-DD" khi có giá trị.
+
             Hãy sử dụng thông tin đã xử lý trước để hỗ trợ việc phân tích, nhưng hãy kiểm tra và điều chỉnh nếu cần.
             Hãy trả lời ngắn gọn, chỉ trả về JSON, không giải thích thêm.
         """

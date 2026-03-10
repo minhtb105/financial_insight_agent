@@ -16,6 +16,7 @@ class TimeProcessor:
     def process_time_params(parsed_query: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process and normalize time parameters from parsed query.
+        Uses hybrid approach: LLM extraction + rule-based fallback for missing params.
         
         Args:
             parsed_query: Dictionary containing time parameters
@@ -33,35 +34,42 @@ class TimeProcessor:
         months = parsed_query.get("months")
         years = parsed_query.get("years")
         
-        # Determine time range
-        if start and end:
-            # User provided explicit start and end dates
-            result["start_date"] = start
-            result["end_date"] = end
-        else:
-            # Calculate based on time parameters
-            end_date = datetime.now()
-            start_date = end_date
+        # Process special end values
+        processed_end = TimeProcessor._process_special_end_value(end)
+        
+        # Special case: when we have end (special value) + time units but no start
+        # Calculate time units from TODAY context, then apply end adjustment
+        if not start and processed_end and (days or weeks or months or years):
+            now = datetime.now()
+            end_date = datetime.strptime(processed_end, "%Y-%m-%d")
             
+            # Calculate start_date based on TODAY and time units
             if days:
-                start_date = end_date - timedelta(days=days)
+                start_date = now - timedelta(days=days)
             elif weeks:
-                start_date = end_date - timedelta(weeks=weeks)
+                start_date = now - timedelta(weeks=weeks)
             elif months:
-                # Approximate month calculation
-                start_date = end_date.replace(
-                    day=1,
-                    month=end_date.month - months + 1 if end_date.month > months else 12 - (months - end_date.month) + 1,
-                    year=end_date.year - 1 if end_date.month <= months else end_date.year
-                )
+                start_date = TimeProcessor._subtract_months(now, months)
             elif years:
-                start_date = end_date.replace(year=end_date.year - years)
+                start_date = now.replace(year=now.year - years)
             else:
-                # Default to 30 days
-                start_date = end_date - timedelta(days=30)
+                start_date = now - timedelta(days=7)
+            
+            # Ensure start_date <= end_date
+            if start_date > end_date:
+                start_date = end_date
             
             result["start_date"] = start_date.strftime("%Y-%m-%d")
             result["end_date"] = end_date.strftime("%Y-%m-%d")
+        
+        # Determine time range
+        elif start and processed_end:
+            # User provided explicit start and end dates
+            result["start_date"] = start
+            result["end_date"] = processed_end
+        else:
+            # Use LLM-extracted params first, then fallback to rule-based
+            result = TimeProcessor._fill_missing_time_params(start, processed_end, days, weeks, months, years)
         
         # Add original parameters for reference
         result["original_params"] = {
@@ -74,6 +82,124 @@ class TimeProcessor:
         }
         
         return result
+
+    @staticmethod
+    def _fill_missing_time_params(start: str, end: str, days: int, weeks: int, months: int, years: int) -> Dict[str, Any]:
+        """
+        Fill missing time parameters using rule-based fallback.
+        Handles cases where LLM only returns partial time info.
+        """
+        result = {}
+        end_date = datetime.now()
+        
+        # If only end is provided (common LLM issue)
+        if end and not start:
+            end_date = datetime.strptime(end, "%Y-%m-%d")
+            start_date = end_date
+            
+            # Try to infer start from context
+            if days:
+                start_date = end_date - timedelta(days=days)
+            elif weeks:
+                start_date = end_date - timedelta(weeks=weeks)
+            elif months:
+                start_date = TimeProcessor._subtract_months(end_date, months)
+            elif years:
+                start_date = end_date.replace(year=end_date.year - years)
+            else:
+                # Default fallback: 7 days before end
+                start_date = end_date - timedelta(days=7)
+        
+        # If only start is provided
+        elif start and not end:
+            start_date = datetime.strptime(start, "%Y-%m-%d")
+            end_date = datetime.now()
+            
+            # If start is in future, use start as end and go back 7 days
+            if start_date > end_date:
+                end_date = start_date
+                start_date = end_date - timedelta(days=7)
+        
+        # If no start/end but has time units
+        elif not start and not end:
+            if days:
+                start_date = end_date - timedelta(days=days)
+            elif weeks:
+                start_date = end_date - timedelta(weeks=weeks)
+            elif months:
+                start_date = TimeProcessor._subtract_months(end_date, months)
+            elif years:
+                start_date = end_date.replace(year=end_date.year - years)
+            else:
+                # Default to 30 days
+                start_date = end_date - timedelta(days=30)
+        
+        else:
+            # Both start and end provided, use as-is
+            start_date = datetime.strptime(start, "%Y-%m-%d")
+            end_date = datetime.strptime(end, "%Y-%m-%d")
+        
+        result["start_date"] = start_date.strftime("%Y-%m-%d")
+        result["end_date"] = end_date.strftime("%Y-%m-%d")
+        
+        return result
+
+    @staticmethod
+    def _subtract_months(date: datetime, months: int) -> datetime:
+        """Helper to subtract months from date with proper handling."""
+        year = date.year - (months // 12)
+        month = date.month - (months % 12)
+        
+        if month <= 0:
+            year -= 1
+            month += 12
+        
+        # Handle month-end dates
+        day = min(date.day, 31 if month in [1, 3, 5, 7, 8, 10, 12] else 30 if month in [4, 6, 9, 11] else 28)
+        
+        return date.replace(year=year, month=month, day=day)
+    
+    @staticmethod
+    def _process_special_end_value(end: str) -> str:
+        """Process special end values like 'yesterday', 'today', etc."""
+        if not end:
+            return end
+        
+        now = datetime.now()
+        
+        if end == "yesterday":
+            return (now - timedelta(days=1)).strftime("%Y-%m-%d")
+        elif end == "today":
+            return now.strftime("%Y-%m-%d")
+        elif end == "last_week":
+            # Return 7 days before current date
+            return (now - timedelta(days=7)).strftime("%Y-%m-%d")
+        elif end == "last_month":
+            # Return the same day of the previous month
+            if now.month == 1:
+                last_month = now.replace(year=now.year - 1, month=12)
+            else:
+                last_month = now.replace(month=now.month - 1)
+            
+            # Handle month-end dates (e.g., Jan 31 -> Feb 28/29)
+            try:
+                last_month_date = last_month.replace(day=now.day)
+            except ValueError:
+                # If the day doesn't exist in the previous month, use the last day of that month
+                if last_month.month == 2:
+                    # February
+                    if (last_month.year % 4 == 0 and last_month.year % 100 != 0) or (last_month.year % 400 == 0):
+                        last_month_date = last_month.replace(day=29)  # Leap year
+                    else:
+                        last_month_date = last_month.replace(day=28)
+                elif last_month.month in [4, 6, 9, 11]:
+                    last_month_date = last_month.replace(day=30)
+                else:
+                    last_month_date = last_month.replace(day=31)
+            
+            return last_month_date.strftime("%Y-%m-%d")
+        
+        return end
     
     @staticmethod
     def validate_time_range(start_date: str, end_date: str) -> bool:

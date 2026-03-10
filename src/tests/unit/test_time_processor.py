@@ -13,31 +13,31 @@ class TestTimeProcessor:
         self.processor = TimeProcessor()
     
     def test_parse_time_range(self):
-        """Test parsing various time range formats."""
+        """Test parsing various time range formats using process_time_params."""
         test_cases = [
             {
-                "input": "7 ngày",
-                "expected": {"start_date": "2024-03-02", "end_date": "2024-03-09"}
+                "input": {"days": 7},
+                "expected": {"start_date": "2026-03-03", "end_date": "2026-03-10"}
             },
             {
-                "input": "1 tháng",
-                "expected": {"start_date": "2024-02-09", "end_date": "2024-03-09"}
+                "input": {"months": 1},
+                "expected": {"start_date": "2026-02-10", "end_date": "2026-03-10"}
             },
             {
-                "input": "3 tuần",
-                "expected": {"start_date": "2024-02-16", "end_date": "2024-03-09"}
+                "input": {"weeks": 3},
+                "expected": {"start_date": "2026-02-17", "end_date": "2026-03-10"}
             },
             {
-                "input": "2024-01-01 đến 2024-01-31",
-                "expected": {"start_date": "2024-01-01", "end_date": "2024-01-31"}
+                "input": {"start": "2026-01-01", "end": "2026-01-31"},
+                "expected": {"start_date": "2026-01-01", "end_date": "2026-01-31"}
             },
         ]
         
         results = []
         for i, test_case in enumerate(test_cases):
             try:
-                result = self.processor.parse_time_range(test_case["input"])
-                success = result == test_case["expected"]
+                result = self.processor.process_time_params(test_case["input"])
+                success = result["start_date"] == test_case["expected"]["start_date"] and result["end_date"] == test_case["expected"]["end_date"]
                 
                 results.append({
                     "input": test_case["input"],
@@ -65,31 +65,31 @@ class TestTimeProcessor:
         return results
     
     def test_parse_specific_date(self):
-        """Test parsing specific dates."""
+        """Test parsing specific dates using process_time_params."""
         test_cases = [
             {
-                "input": "hôm qua",
-                "expected": "2024-03-08"
+                "input": {"end": "yesterday"},
+                "expected": "2026-03-09"
             },
             {
-                "input": "hôm nay",
-                "expected": "2024-03-09"
+                "input": {"end": "today"},
+                "expected": "2026-03-10"
             },
             {
-                "input": "tuần trước",
-                "expected": "2024-03-02"
+                "input": {"end": "last_week"},
+                "expected": "2026-03-03"
             },
             {
-                "input": "tháng trước",
-                "expected": "2024-02-09"
+                "input": {"end": "last_month"},
+                "expected": "2026-02-10"
             },
         ]
         
         results = []
         for i, test_case in enumerate(test_cases):
             try:
-                result = self.processor.parse_specific_date(test_case["input"])
-                success = result == test_case["expected"]
+                result = self.processor.process_time_params(test_case["input"])
+                success = result["end_date"] == test_case["expected"]
                 
                 results.append({
                     "input": test_case["input"],
@@ -117,27 +117,27 @@ class TestTimeProcessor:
         return results
     
     def test_parse_relative_date(self):
-        """Test parsing relative dates."""
+        """Test parsing relative dates using process_time_params."""
         test_cases = [
             {
-                "input": "7 ngày trước",
-                "expected": "2024-03-02"
+                "input": {"end": "yesterday", "days": 7},
+                "expected": "2026-03-03"
             },
             {
-                "input": "1 tháng trước",
-                "expected": "2024-02-09"
+                "input": {"end": "yesterday", "months": 1},
+                "expected": "2026-02-10"
             },
             {
-                "input": "3 tuần trước",
-                "expected": "2024-02-16"
+                "input": {"end": "yesterday", "weeks": 3},
+                "expected": "2026-02-17"
             },
         ]
         
         results = []
         for i, test_case in enumerate(test_cases):
             try:
-                result = self.processor.parse_relative_date(test_case["input"])
-                success = result == test_case["expected"]
+                result = self.processor.process_time_params(test_case["input"])
+                success = result["start_date"] == test_case["expected"]
                 
                 results.append({
                     "input": test_case["input"],
@@ -165,22 +165,22 @@ class TestTimeProcessor:
         return results
     
     def test_validate_time_parameters(self):
-        """Test time parameter validation."""
+        """Test time parameter validation using validate_time_range."""
         test_cases = [
             {
-                "input": {"start_date": "2024-03-01", "end_date": "2024-03-09"},
+                "input": {"start_date": "2026-03-01", "end_date": "2026-03-09"},
                 "expected": True
             },
             {
-                "input": {"start_date": "2024-03-09", "end_date": "2024-03-01"},
+                "input": {"start_date": "2026-03-09", "end_date": "2026-03-01"},
                 "expected": False  # start > end
             },
             {
-                "input": {"start_date": "2025-01-01", "end_date": "2025-01-09"},
+                "input": {"start_date": "2027-01-01", "end_date": "2027-01-09"},
                 "expected": False  # future dates
             },
             {
-                "input": {"start_date": "2024-01-01", "end_date": "2024-12-31"},
+                "input": {"start_date": "2026-01-01", "end_date": "2026-12-31"},
                 "expected": False  # too long range
             },
         ]
@@ -188,7 +188,7 @@ class TestTimeProcessor:
         results = []
         for i, test_case in enumerate(test_cases):
             try:
-                result = self.processor.validate_time_parameters(test_case["input"])
+                result = self.processor.validate_time_range(test_case["input"]["start_date"], test_case["input"]["end_date"])
                 success = result == test_case["expected"]
                 
                 results.append({
