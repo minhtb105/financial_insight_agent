@@ -240,8 +240,24 @@ def handle_portfolio_query(parsed: Dict[str, Any]):
     Handle portfolio_query: portfolio value, performance, allocation
     """
     requested_field = parsed.get("requested_field")
+    portfolio_data = parsed.get("portfolio")
     
     try:
+        # If portfolio data is provided in the query, use it
+        if portfolio_data:
+            # Create a temporary portfolio manager with the provided data
+            portfolio_manager = PortfolioManager()
+            current_holdings = portfolio_manager.get_holdings()
+            
+            # Merge with existing holdings
+            for ticker, quantity in portfolio_data.items():
+                if ticker not in current_holdings:
+                    current_holdings[ticker] = 0
+                current_holdings[ticker] += quantity
+            
+            # Update portfolio temporarily for this query
+            portfolio_manager.portfolio["holdings"] = current_holdings
+        
         if requested_field == "portfolio_value":
             return get_portfolio_value(parsed)
         elif requested_field == "portfolio_performance":

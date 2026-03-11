@@ -32,9 +32,17 @@ class HistoricalQuery(BaseModel):
     years: Optional[int] = Field(None, description="Number of years")
     
     # Query-specific parameters
-    indicator_params: Optional[Dict[str, List[int]]] = Field(None, description="Indicator parameters")
+    indicator_params: Optional[Dict[str, Any]] = Field(None, description="Indicator parameters")
     aggregate: Optional[str] = Field(None, description="Aggregation function")
     compare_with: Optional[List[str]] = Field(None, description="Tickers to compare with")
+    
+    # Financial ratio parameters
+    period: Optional[str] = Field(None, description="Financial period (quarter, month, year)")
+    quarter: Optional[int] = Field(None, description="Quarter number (1-4)")
+    year: Optional[int] = Field(None, description="Year")
+    
+    # Sentiment parameters
+    sentiment: Optional[Dict[str, Any]] = Field(None, description="Sentiment scores (can be nested per ticker)")
     
     # Metadata
     confidence: Optional[float] = Field(None, description="Parsing confidence score")
@@ -55,8 +63,11 @@ class HistoricalQuery(BaseModel):
     @field_validator('tickers')
     def validate_tickers(cls, v):
         """Validate tickers list."""
+        # For portfolio queries, tickers can be empty
         if not v:
-            raise ValueError("At least one ticker is required")
+            # Allow empty tickers for portfolio queries
+            return v
+        
         for ticker in v:
             if not isinstance(ticker, str) or not ticker.isalpha():
                 raise ValueError(f"Invalid ticker: {ticker}")
@@ -135,15 +146,22 @@ class HistoricalQuery(BaseModel):
             return []
         return list(self.indicator_params.keys())
     
-    def get_indicator_params_for_type(self, indicator_type: str) -> List[int]:
+    def get_indicator_params_for_type(self, indicator_type: str) -> Any:
         """Get parameters for a specific indicator type."""
         if not self.indicator_params:
             return []
-        return self.indicator_params.get(indicator_type, [])
+        params = self.indicator_params.get(indicator_type, [])
+        # Handle both list and dict types
+        if isinstance(params, list):
+            return params
+        elif isinstance(params, dict):
+            return params
+        else:
+            return [params] if params is not None else []
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary representation."""
-        return self.dict(exclude_none=True)
+        return self.model_dump(exclude_none=True)
     
     def to_json(self) -> str:
         """Convert to JSON string."""

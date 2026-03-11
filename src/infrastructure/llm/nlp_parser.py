@@ -28,12 +28,43 @@ class QueryParser:
 
         # Few-shot examples for each query type
         self.few_shot_examples = {
+            "financial_ratio_query": [
+                {
+                    "input": "Tỷ lệ P/E của VNM hiện tại là bao nhiêu?",
+                    "output": {
+                        "query_type": "financial_ratio_query",
+                        "requested_field": "pe",
+                        "tickers": ["VNM"]
+                    }
+                },
+                {
+                    "input": "So sánh ROE giữa FPT và VNM trong 3 năm gần đây",
+                    "output": {
+                        "query_type": "financial_ratio_query",
+                        "requested_field": "roe",
+                        "tickers": ["FPT"],
+                        "compare_with": ["VNM"],
+                        "years": 3
+                    }
+                },
+                {
+                    "input": "EPS của HPG trong quý 3/2024 là bao nhiêu?",
+                    "output": {
+                        "query_type": "financial_ratio_query",
+                        "requested_field": "eps",
+                        "tickers": ["HPG"],
+                        "period": "quarter",
+                        "quarter": 3,
+                        "year": 2024
+                    }
+                }
+            ],
             "price_query": [
                 {
-                    "input": "Lấy giá đóng cửa của VCB hôm qua.",
+                    "input": "Lấy giá mở cửa của VCB hôm qua.",
                     "output": {
                         "query_type": "price_query",
-                        "requested_field": "close",
+                        "requested_field": "open",
                         "tickers": ["VCB"],
                         "days": 1
                     }
@@ -156,6 +187,26 @@ class QueryParser:
                         "aggregate": "max",
                         "days": 10
                     }
+                },
+                {
+                    "input": "Trong nhóm HPG, NKG, HSG mã nào có volume thấp nhất tuần này?",
+                    "output": {
+                        "query_type": "ranking_query",
+                        "requested_field": "volume",
+                        "tickers": ["HPG", "NKG", "HSG"],
+                        "aggregate": "min",
+                        "weeks": 1
+                    }
+                },
+                {
+                    "input": "Trong các mã HSG, HPG, NKG mã nào tăng mạnh nhất trong tháng?",
+                    "output": {
+                        "query_type": "ranking_query",
+                        "requested_field": "close",
+                        "tickers": ["HSG", "HPG", "NKG"],
+                        "aggregate": "max",
+                        "months": 1
+                    }
                 }
             ],
             "aggregate_query": [
@@ -186,6 +237,63 @@ class QueryParser:
                         "requested_field": "close",
                         "tickers": ["SSI"],
                         "aggregate": "min"
+                    }
+                }
+            ],
+            "news_sentiment_query": [
+                {
+                    "input": "Có tin tức gì về VCB trong tuần này không?",
+                    "output": {
+                        "query_type": "news_sentiment_query",
+                        "requested_field": "news",
+                        "tickers": ["VCB"],
+                        "weeks": 1
+                    }
+                },
+                {
+                    "input": "Cảm xúc thị trường đối với nhóm ngân hàng hiện nay ra sao?",
+                    "output": {
+                        "query_type": "news_sentiment_query",
+                        "requested_field": "sentiment",
+                        "tickers": ["VCB", "BID", "CTG", "MBB", "ACB"],
+                        "days": 7
+                    }
+                },
+                {
+                    "input": "Tin tức tích cực về FPT trong tháng 11",
+                    "output": {
+                        "query_type": "news_sentiment_query",
+                        "requested_field": "positive_news",
+                        "tickers": ["FPT"],
+                        "months": 1
+                    }
+                }
+            ],
+            "portfolio_query": [
+                {
+                    "input": "Nếu tôi mua 100 cổ FPT và 200 cổ VNM thì danh mục hiện tại ra sao?",
+                    "output": {
+                        "query_type": "portfolio_query",
+                        "requested_field": "portfolio_summary",
+                        "portfolio": {
+                            "FPT": 100,
+                            "VNM": 200
+                        }
+                    }
+                },
+                {
+                    "input": "Hiệu suất danh mục của tôi trong tháng 11 là bao nhiêu?",
+                    "output": {
+                        "query_type": "portfolio_query",
+                        "requested_field": "performance",
+                        "months": 1
+                    }
+                },
+                {
+                    "input": "Phân bổ ngành trong danh mục hiện tại",
+                    "output": {
+                        "query_type": "portfolio_query",
+                        "requested_field": "sector_allocation"
                     }
                 }
             ]
@@ -221,6 +329,23 @@ class QueryParser:
 
             Thông tin đã được xử lý trước (có thể có lỗi):
             {preprocessed}
+
+            QUY TẮC PHÂN LOẠI QUERY:
+            - Nếu query chứa các chỉ số tài chính (P/E, PE, P/B, PB, ROE, EPS, tỷ lệ, ratio) → financial_ratio_query (ƯU TIÊN CAO NHẤT)
+            - Nếu query có từ khóa so sánh (so sánh, compare) nhưng KHÔNG có chỉ số tài chính → comparison_query
+            - Nếu query có từ khóa xếp hạng (cao nhất, thấp nhất, lớn nhất, nhỏ nhất, min, max, top, bottom) → ranking_query
+            - Nếu query có từ khóa tổng hợp (tổng, sum, trung bình, mean, nhỏ nhất, lớn nhất, min, max) → aggregate_query
+            - Nếu query có từ khóa chỉ báo (SMA, EMA, RSI, MACD, MA, chỉ báo, indicator) → indicator_query
+            - Nếu query có từ khóa công ty (cổ đông, lãnh đạo, CEO, BOD, công ty con, công ty mẹ) → company_query
+            - Nếu query có từ khóa tin tức (tin tức, news, cảm xúc, sentiment, tích cực, tiêu cực) → news_sentiment_query
+            - Nếu query có từ khóa danh mục (danh mục, portfolio, hiệu suất, phân bổ, giá trị) → portfolio_query
+            - Các trường hợp còn lại → price_query
+
+            QUY TẮC ƯU TIÊN:
+            1. Financial ratio query có ưu tiên CAO NHẤT - luôn kiểm tra trước
+            2. Nếu có "so sánh" + chỉ số tài chính → financial_ratio_query
+            3. Nếu có "so sánh" nhưng KHÔNG có chỉ số tài chính → comparison_query
+            4. Các loại khác theo thứ tự ưu tiên giảm dần
 
             QUY TẮC THỜI GIAN:
             - "X ngày gần nhất / trong X ngày / X ngày vừa rồi" → days = X, start = {today} - X ngày, end = {today}
@@ -264,10 +389,27 @@ class QueryParser:
         return context
 
     def parse(self, query: str) -> Dict[str, Any]:
-        """Parse query using enhanced approach."""
+        """Parse query using enhanced approach with smart priority detection."""
         # Step 1: Preprocess with rule-based approach
         preprocessed = self.preprocessor.preprocess(query)
         confidence = self.preprocessor.calculate_confidence(query, preprocessed)
+        
+        # Step 1.5: Smart detection for priority handling
+        has_financial_metrics = self.preprocessor.has_financial_metrics(query)
+        has_ranking_keywords = self.preprocessor.has_ranking_keywords(query)
+        has_comparison_keywords = self.preprocessor.has_comparison_keywords(query)
+        
+        # Build priority instruction
+        priority_instruction = ""
+        if has_financial_metrics and has_comparison_keywords:
+            # Case: "So sánh ROE giữa FPT và VNM" 
+            # Both have financial metrics AND comparison keywords
+            # Priority: financial_ratio_query > comparison_query
+            priority_instruction = "\n⚠️ ƯU TIÊN CAO: Query này có cả từ khóa 'so sánh' lẫn chỉ số tài chính (ROE, PE, EPS). ĐÃY LÀ financial_ratio_query, KHÔNG phải comparison_query."
+        elif has_ranking_keywords and has_comparison_keywords:
+            # Case: "Mã nào ... trong nhóm"
+            # Both ranking and comparison keywords - prioritize ranking
+            priority_instruction = "\n⚠️ ƯU TIÊN CAO: Query này yêu cầu xếp hạng (min, max, cao nhất, thấp nhất). ĐÃY LÀ ranking_query, KHÔNG phải comparison_query."
         
         # Step 2: Get few-shot context
         few_shot_context = self._build_few_shot_context(query, preprocessed["query_type"])
@@ -290,6 +432,7 @@ class QueryParser:
             
             Hãy đảm bảo kết quả cuối cùng đúng với schema:
             {self.parser.get_format_instructions()}
+            {priority_instruction}
             """)
         else:
             # Low confidence: use preprocessed as suggestion only
@@ -301,6 +444,7 @@ class QueryParser:
             
             Hãy đảm bảo kết quả cuối cùng đúng với schema:
             {self.parser.get_format_instructions()}
+            {priority_instruction}
             """)
 
         human_msg = HumanMessage(query)

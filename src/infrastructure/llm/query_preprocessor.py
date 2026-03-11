@@ -43,7 +43,7 @@ class QueryPreprocessor:
             'ema': r'EMA(\d+)',
             'rsi': r'RSI(\d+)',
             'macd': r'MACD(?:\((\d+),(\d+)\))?',
-            'bb': r'BB|Bollinger',
+            'bb': r'(?<!\w)BB(?!\w)|Bollinger',
             'stochastic': r'Stochastic|STOCH',
             'adx': r'ADX',
             'atr': r'ATR',
@@ -58,7 +58,12 @@ class QueryPreprocessor:
         
         self.ranking_keywords = {
             'mã nào cao nhất', 'mã nào thấp nhất', 'which of', 'which has the highest',
-            'which has the lowest', 'trong các mã', 'mã nào lớn nhất', 'mã nào nhỏ nhất'
+            'which has the lowest', 'trong các mã', 'mã nào lớn nhất', 'mã nào nhỏ nhất',
+            'mã nào tốt nhất', 'mã nào xấu nhất', 'mã nào mạnh nhất', 'mã nào yếu nhất',
+            'mã nào tăng nhiều nhất', 'mã nào giảm nhiều nhất', 'mã nào dẫn đầu', 'mã nào đi sau',
+            'top', 'bottom', 'highest', 'lowest', 'best', 'worst', 'leading', 'lagging',
+            'cao nhất', 'thấp nhất', 'lớn nhất', 'nhỏ nhất',
+            'tăng mạnh nhất', 'giảm mạnh nhất', 'mạnh nhất', 'yếu nhất'
         }
         
         self.aggregate_keywords = {
@@ -78,6 +83,21 @@ class QueryPreprocessor:
         self.company_keywords = {
             'cổ đông', 'shareholders', 'lãnh đạo', 'executives', 'CEO', 'BOD', 'board',
             'công ty con', 'subsidiary', 'công ty mẹ', 'company', 'doanh nghiệp'
+        }
+        
+        self.financial_ratio_keywords = {
+            'P/E', 'PE', 'P/B', 'PB', 'ROE', 'EPS', 'tỷ lệ', 'ratio', 'financial ratio',
+            'giá trên lợi nhuận', 'giá trên sổ sách', 'tỷ suất sinh lời', 'lợi nhuận trên vốn'
+        }
+        
+        self.news_sentiment_keywords = {
+            'tin tức', 'news', 'cảm xúc', 'sentiment', 'tích cực', 'tiêu cực', 'thị trường',
+            'social', 'volume', 'đánh giá', 'phân tích', 'bình luận'
+        }
+        
+        self.portfolio_keywords = {
+            'danh mục', 'portfolio', 'hiệu suất', 'performance', 'phân bổ', 'allocation',
+            'ngành', 'sector', 'đa dạng', 'diversification', 'giá trị', 'value'
         }
 
     def extract_tickers(self, query: str) -> List[str]:
@@ -194,20 +214,51 @@ class QueryPreprocessor:
         
         return result
 
+    def has_financial_metrics(self, query: str) -> bool:
+        """Check if query contains financial metrics keywords (ROE, P/E, EPS, etc.)."""
+        query_lower = query.lower()
+        query_upper = query.upper()
+        
+        for keyword in self.financial_ratio_keywords:
+            if keyword in query_lower or keyword in query_upper:
+                return True
+        return False
+    
+    def has_ranking_keywords(self, query: str) -> bool:
+        """Check if query contains ranking keywords (min, max, highest, lowest)."""
+        query_lower = query.lower()
+        
+        for keyword in self.ranking_keywords:
+            if keyword in query_lower:
+                return True
+        return False
+    
+    def has_comparison_keywords(self, query: str) -> bool:
+        """Check if query contains comparison keywords."""
+        query_lower = query.lower()
+        
+        for keyword in self.comparison_keywords:
+            if keyword in query_lower:
+                return True
+        return False
+
     def detect_query_type(self, query: str, tickers: List[str]) -> str:
         """Detect query type based on keywords and patterns."""
         query_lower = query.lower()
         query_upper = query.upper()
         
-        # Check for comparison first (highest priority)
+        # Check for financial ratios FIRST (highest priority)
+        if self.has_financial_metrics(query):
+            return "financial_ratio_query"
+        
+        # Check for ranking keywords
+        if self.has_ranking_keywords(query) and len(tickers) >= 2:
+            return "ranking_query"
+        
+        # Check for comparison (after financial ratios)
         for keyword in self.comparison_keywords:
             if keyword in query_lower:
                 return "comparison_query"
-        
-        # Check for ranking
-        for keyword in self.ranking_keywords:
-            if keyword in query_lower and len(tickers) >= 2:
-                return "ranking_query"
         
         # Check for aggregate
         for keyword in self.aggregate_keywords:
@@ -223,6 +274,16 @@ class QueryPreprocessor:
         for keyword in self.company_keywords:
             if keyword in query_lower:
                 return "company_query"
+        
+        # Check for news/sentiment
+        for keyword in self.news_sentiment_keywords:
+            if keyword in query_lower:
+                return "news_sentiment_query"
+        
+        # Check for portfolio
+        for keyword in self.portfolio_keywords:
+            if keyword in query_lower:
+                return "portfolio_query"
         
         # Default to price query
         return "price_query"
@@ -260,7 +321,61 @@ class QueryPreprocessor:
             elif 'công ty con' in query_lower:
                 return "subsidiaries"
         
+        elif query_type == "financial_ratio_query":
+            if 'P/E' in query_upper or 'PE' in query_upper or 'giá trên lợi nhuận' in query_lower:
+                return "pe"
+            elif 'P/B' in query_upper or 'PB' in query_upper or 'giá trên sổ sách' in query_lower:
+                return "pb"
+            elif 'ROE' in query_upper or 'tỷ suất sinh lời' in query_lower or 'lợi nhuận trên vốn' in query_lower:
+                return "roe"
+            elif 'EPS' in query_upper:
+                return "eps"
+            elif 'tỷ lệ' in query_lower or 'ratio' in query_lower:
+                return "financial_ratio"
+        
+        elif query_type == "news_sentiment_query":
+            if 'tin tức' in query_lower or 'news' in query_lower:
+                return "news"
+            elif 'cảm xúc' in query_lower or 'sentiment' in query_lower:
+                return "sentiment"
+            elif 'tích cực' in query_lower:
+                return "positive_news"
+            elif 'tiêu cực' in query_lower:
+                return "negative_news"
+            elif 'social' in query_lower or 'volume' in query_lower:
+                return "social_volume"
+        
+        elif query_type == "portfolio_query":
+            if 'danh mục' in query_lower or 'portfolio' in query_lower:
+                return "portfolio_summary"
+            elif 'hiệu suất' in query_lower or 'performance' in query_lower:
+                return "performance"
+            elif 'phân bổ' in query_lower or 'allocation' in query_lower:
+                return "sector_allocation"
+            elif 'giá trị' in query_lower or 'value' in query_lower:
+                return "portfolio_value"
+        
         return None
+
+    def extract_portfolio_data(self, query: str) -> Optional[Dict[str, int]]:
+        """Extract portfolio holdings from query."""
+        query_upper = query.upper()
+        
+        # Pattern to match portfolio holdings: "100 cổ FPT", "200 cổ VNM"
+        portfolio_pattern = r'(\d+)\s*(CỔ|SHARES?)\s*([A-Z]{2,4})'
+        matches = re.findall(portfolio_pattern, query_upper)
+        
+        if not matches:
+            return None
+        
+        portfolio = {}
+        for match in matches:
+            quantity = int(match[0])
+            ticker = match[2]
+            if ticker in self.vietnamese_tickers:
+                portfolio[ticker] = quantity
+        
+        return portfolio if portfolio else None
 
     def validate_and_correct(self, parsed: Dict[str, Any]) -> Dict[str, Any]:
         """Validate and auto-correct parsed results."""
@@ -304,6 +419,21 @@ class QueryPreprocessor:
                 # Fall back to price_query if not enough tickers
                 parsed["query_type"] = "price_query"
         
+        # Validate financial ratio query
+        if parsed.get("query_type") == "financial_ratio_query":
+            if not parsed.get("requested_field"):
+                parsed["requested_field"] = "pe"  # Default financial ratio
+        
+        # Validate news sentiment query
+        if parsed.get("query_type") == "news_sentiment_query":
+            if not parsed.get("requested_field"):
+                parsed["requested_field"] = "news"  # Default news sentiment field
+        
+        # Validate portfolio query
+        if parsed.get("query_type") == "portfolio_query":
+            if not parsed.get("requested_field"):
+                parsed["requested_field"] = "portfolio_summary"  # Default portfolio field
+        
         return parsed
 
     def preprocess(self, query: str) -> Dict[str, Any]:
@@ -317,6 +447,13 @@ class QueryPreprocessor:
         query_type = self.detect_query_type(query, tickers)
         requested_field = self.extract_requested_field(query, query_type)
         
+        # Special handling for portfolio queries with portfolio data
+        query_lower = query.lower()
+        portfolio_data = None
+        if query_type == "portfolio_query" and ("portfolio" in query_lower or "danh mục" in query_lower):
+            # Extract portfolio holdings from query
+            portfolio_data = self.extract_portfolio_data(query)
+        
         # Build initial result
         result = {
             "tickers": tickers,
@@ -326,10 +463,24 @@ class QueryPreprocessor:
             **time_params
         }
         
+        # Add portfolio data if available
+        if portfolio_data:
+            result["portfolio"] = portfolio_data
+        
         # Validate and correct
         result = self.validate_and_correct(result)
         
         return result
+
+    def has_financial_metrics(self, query: str) -> bool:
+        """Check if query contains financial metrics keywords (ROE, P/E, EPS, etc.)."""
+        query_lower = query.lower()
+        query_upper = query.upper()
+        
+        for keyword in self.financial_ratio_keywords:
+            if keyword in query_lower or keyword in query_upper:
+                return True
+        return False
 
     def calculate_confidence(self, query: str, preprocessed: Dict[str, Any]) -> float:
         """Calculate confidence score for the preprocessing result."""
@@ -346,7 +497,8 @@ class QueryPreprocessor:
         query_type = preprocessed.get("query_type")
         if query_type in ["price_query", "indicator_query", "company_query"]:
             confidence += 25.0
-        elif query_type in ["comparison_query", "ranking_query", "aggregate_query"]:
+        elif query_type in ["comparison_query", "ranking_query", "aggregate_query", 
+                           "financial_ratio_query", "news_sentiment_query", "portfolio_query"]:
             confidence += 20.0  # Slightly lower due to complexity
         
         # Time params confidence

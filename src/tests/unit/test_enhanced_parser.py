@@ -1,9 +1,9 @@
-from infrastructure.llm.nlp_parser import EnhancedQueryParser
+from infrastructure.llm.nlp_parser import QueryParser
 
 
 def test_enhanced_parser():
     """Test the enhanced parser with new query types."""
-    parser = EnhancedQueryParser()
+    parser = QueryParser()
     
     test_cases = [
         # Original query types

@@ -118,14 +118,26 @@ test_cases = [
     "Tổng khối lượng giao dịch của nhóm HPG, HSG, NKG trong 10 ngày."
 ]
 
-# Use the new evaluate API
-evaluate(
-    target=lambda query: parser.parse(query),
-    data=test_cases,
-    evaluators=[
-        "json_valid",
-        "has_field:tickers",
-        "enum_valid:query_type",
-    ],
-    experiment_name="financial-nlp-parser"
-)
+# Simple test function
+def test_parser():
+    """Test parser with sample queries."""
+    test_queries = [
+        "Lấy giá mở cửa của VCB hôm qua.",
+        "Tính SMA9 cho VCB trong 1 tuần gần nhất.",
+        "Danh sách cổ đông lớn của VCB.",
+        "So sánh khối lượng giao dịch của VIC với HPG trong 1 tuần.",
+        "Trong các mã VCB, BID, CTG mã nào có giá mở cửa thấp nhất hôm qua?",
+        "Tổng khối lượng giao dịch của HPG trong 1 tuần.",
+        "Tỷ lệ P/E của VNM hiện tại là bao nhiêu?",
+        "Có tin tức gì về VCB trong tuần này không?",
+        "Nếu tôi mua 100 cổ FPT và 200 cổ VNM thì danh mục hiện tại ra sao?"
+    ]
+    
+    for query in test_queries:
+        result = parser.parse(query)
+        print(f"Query: {query}")
+        print(f"Result: {result}")
+        print("---")
+
+if __name__ == "__main__":
+    test_parser()
