@@ -409,7 +409,12 @@ _session_manager_instance: Optional[SessionManager] = None
 
 
 def get_session_manager() -> Optional[SessionManager]:
-    """Get global session manager instance."""
+    """Get global session manager instance — prefer Dependencies container."""
+    from infrastructure.dependencies import get_deps
+    deps = get_deps()
+    if deps is not None and deps.session_manager is not None:
+        return deps.session_manager
+
     global _session_manager_instance
     if _session_manager_instance is None:
         try:

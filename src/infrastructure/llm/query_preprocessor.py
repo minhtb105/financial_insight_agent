@@ -99,6 +99,20 @@ class QueryPreprocessor:
             'danh mục', 'portfolio', 'hiệu suất', 'performance', 'phân bổ', 'allocation',
             'ngành', 'sector', 'đa dạng', 'diversification', 'giá trị', 'value'
         }
+        
+        self.alert_keywords = {
+            'cảnh báo', 'alert', 'cảnh giác', 'khi', 'vượt', 'ngưỡng',
+            'threshold', 'trên', 'dưới', 'chạm'
+        }
+        
+        self.forecast_keywords = {
+            'dự báo', 'forecast', 'dự đoán', 'predict', 'prediction',
+            'xu hướng', 'trend', 'tương lai', 'future', 'dự tính'
+        }
+        
+        self.sector_keywords = {
+            'ngành', 'sector', 'nhóm ngành', 'lĩnh vực', 'industry'
+        }
 
     def extract_tickers(self, query: str) -> List[str]:
         """Extract tickers using regex and validate against known list."""
@@ -215,7 +229,6 @@ class QueryPreprocessor:
         return result
 
     def has_financial_metrics(self, query: str) -> bool:
-        """Check if query contains financial metrics keywords (ROE, P/E, EPS, etc.)."""
         query_lower = query.lower()
         query_upper = query.upper()
         
@@ -225,7 +238,6 @@ class QueryPreprocessor:
         return False
     
     def has_ranking_keywords(self, query: str) -> bool:
-        """Check if query contains ranking keywords (min, max, highest, lowest)."""
         query_lower = query.lower()
         
         for keyword in self.ranking_keywords:
@@ -234,7 +246,6 @@ class QueryPreprocessor:
         return False
     
     def has_comparison_keywords(self, query: str) -> bool:
-        """Check if query contains comparison keywords."""
         query_lower = query.lower()
         
         for keyword in self.comparison_keywords:
@@ -242,50 +253,70 @@ class QueryPreprocessor:
                 return True
         return False
 
+    def has_alert_keywords(self, query: str) -> bool:
+        query_lower = query.lower()
+        for keyword in self.alert_keywords:
+            if keyword in query_lower:
+                return True
+        return False
+
+    def has_forecast_keywords(self, query: str) -> bool:
+        query_lower = query.lower()
+        for keyword in self.forecast_keywords:
+            if keyword in query_lower:
+                return True
+        return False
+
+    def has_sector_keywords(self, query: str) -> bool:
+        query_lower = query.lower()
+        for keyword in self.sector_keywords:
+            if keyword in query_lower:
+                return True
+        return False
+
     def detect_query_type(self, query: str, tickers: List[str]) -> str:
-        """Detect query type based on keywords and patterns."""
         query_lower = query.lower()
         query_upper = query.upper()
         
-        # Check for financial ratios FIRST (highest priority)
         if self.has_financial_metrics(query):
             return "financial_ratio_query"
         
-        # Check for ranking keywords
         if self.has_ranking_keywords(query) and len(tickers) >= 2:
             return "ranking_query"
         
-        # Check for comparison (after financial ratios)
         for keyword in self.comparison_keywords:
             if keyword in query_lower:
                 return "comparison_query"
         
-        # Check for aggregate
         for keyword in self.aggregate_keywords:
             if keyword in query_lower:
                 return "aggregate_query"
         
-        # Check for indicators
         for keyword in self.indicator_keywords:
             if keyword in query_upper:
                 return "indicator_query"
         
-        # Check for company info
         for keyword in self.company_keywords:
             if keyword in query_lower:
                 return "company_query"
         
-        # Check for news/sentiment
         for keyword in self.news_sentiment_keywords:
             if keyword in query_lower:
                 return "news_sentiment_query"
         
-        # Check for portfolio
         for keyword in self.portfolio_keywords:
             if keyword in query_lower:
                 return "portfolio_query"
         
-        # Default to price query
+        if self.has_alert_keywords(query) and tickers:
+            return "alert_query"
+        
+        if self.has_forecast_keywords(query):
+            return "forecast_query"
+        
+        if self.has_sector_keywords(query):
+            return "sector_query"
+        
         return "price_query"
 
     def extract_requested_field(self, query: str, query_type: str) -> Optional[str]:
@@ -355,6 +386,81 @@ class QueryPreprocessor:
             elif 'giá trị' in query_lower or 'value' in query_lower:
                 return "portfolio_value"
         
+        elif query_type == "alert_query":
+            if 'giá' in query_lower or 'price' in query_lower:
+                return "price_alert"
+            elif 'volume' in query_lower or 'khối lượng' in query_lower:
+                return "volume_alert"
+            elif 'kỹ thuật' in query_lower or 'technical' in query_lower:
+                return "technical_alert"
+            elif 'tin tức' in query_lower or 'news' in query_lower:
+                return "news_alert"
+            elif 'sentiment' in query_lower or 'cảm xúc' in query_lower:
+                return "sentiment_alert"
+        
+        elif query_type == "forecast_query":
+            if 'giá' in query_lower or 'price' in query_lower:
+                return "price_forecast"
+            elif 'xu hướng' in query_lower or 'trend' in query_lower:
+                return "trend_analysis"
+            elif 'kháng cự' in query_lower or 'support' in query_lower:
+                return "support_resistance"
+            elif 'động lượng' in query_lower or 'momentum' in query_lower:
+                return "momentum_forecast"
+            elif 'rủi ro' in query_lower or 'volatility' in query_lower:
+                return "volatility_forecast"
+        
+        elif query_type == "sector_query":
+            if 'hiệu suất' in query_lower or 'performance' in query_lower:
+                return "sector_performance"
+            elif 'phân bổ' in query_lower or 'allocation' in query_lower:
+                return "sector_allocation"
+            elif 'xoay vòng' in query_lower or 'rotation' in query_lower:
+                return "sector_rotation"
+            elif 'phân tích' in query_lower or 'analysis' in query_lower:
+                return "industry_analysis"
+            elif 'so sánh' in query_lower or 'compare' in query_lower:
+                return "peer_comparison"
+            elif 'sentiment' in query_lower or 'cảm xúc' in query_lower:
+                return "sector_sentiment"
+        
+        return None
+
+    def extract_alert_params(self, query: str) -> Dict[str, Any]:
+        query_lower = query.lower()
+        result = {}
+        
+        threshold_match = re.search(r'(\d+[\.\d]*)\s*(nghìn|ngàn|triệu|tỷ|k|m|b)?', query_lower)
+        if threshold_match:
+            value = float(threshold_match.group(1))
+            unit = threshold_match.group(2)
+            if unit in ('nghìn', 'ngàn', 'k'):
+                value *= 1000
+            elif unit in ('triệu', 'm'):
+                value *= 1000000
+            elif unit in ('tỷ', 'b'):
+                value *= 1000000000
+            result['threshold'] = value
+        
+        if any(w in query_lower for w in ['vượt', 'trên', 'above', 'lớn hơn', 'cao hơn']):
+            result['condition'] = 'above'
+        elif any(w in query_lower for w in ['dưới', 'below', 'nhỏ hơn', 'thấp hơn', 'xuống']):
+            result['condition'] = 'below'
+        
+        return result
+
+    def extract_sector(self, query: str) -> Optional[str]:
+        sector_patterns = [
+            r'ngành\s+(\S+)',
+            r'sector\s+(\S+)',
+            r'nhóm\s+(\S+)',
+            r'lĩnh\s+vực\s+(\S+)',
+            r'industry\s+(\S+)',
+        ]
+        for pattern in sector_patterns:
+            match = re.search(pattern, query.lower())
+            if match:
+                return match.group(1)
         return None
 
     def extract_portfolio_data(self, query: str) -> Optional[Dict[str, int]]:
@@ -463,9 +569,18 @@ class QueryPreprocessor:
             **time_params
         }
         
-        # Add portfolio data if available
+        # Add type-specific fields
         if portfolio_data:
             result["portfolio"] = portfolio_data
+        
+        if query_type == "alert_query":
+            alert_params = self.extract_alert_params(query)
+            result.update(alert_params)
+        
+        if query_type == "sector_query":
+            sector_name = self.extract_sector(query)
+            if sector_name:
+                result["sector"] = sector_name
         
         # Validate and correct
         result = self.validate_and_correct(result)

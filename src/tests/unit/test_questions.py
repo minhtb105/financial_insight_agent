@@ -1,6 +1,6 @@
 import json
 import pandas as pd 
-from application.agent.agent import StockAgent
+from application.agents.agent import StockAgent
 
 
 EXCEL_PATH = "src/tests/data/Test questions.xlsx"

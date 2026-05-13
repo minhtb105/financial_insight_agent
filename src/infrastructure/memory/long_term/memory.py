@@ -835,7 +835,12 @@ _long_term_memory_instance: Optional[LongTermMemory] = None
 
 
 def get_long_term_memory() -> Optional[LongTermMemory]:
-    """Get global long-term memory instance."""
+    """Get global long-term memory instance — prefer Dependencies container."""
+    from infrastructure.dependencies import get_deps
+    deps = get_deps()
+    if deps is not None and deps.long_term_memory is not None:
+        return deps.long_term_memory
+
     global _long_term_memory_instance
     if _long_term_memory_instance is None:
         try:

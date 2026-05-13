@@ -3,7 +3,7 @@
         "./"
     ],
     "graphs": {
-        "agent": "./src/application/agent/agent.py:agent"
+        "agent": "./src/application/agents/agent.py:agent"
     },
     "env": ".env"
 }

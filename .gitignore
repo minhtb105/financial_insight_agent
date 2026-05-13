@@ -31,3 +31,5 @@ Thumbs.db
 src/financial_insight_agent.egg-info/
 .env
 .langgraph_api/
+.claude/
+.kilo/

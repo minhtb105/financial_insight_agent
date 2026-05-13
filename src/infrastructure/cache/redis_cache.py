@@ -5,6 +5,7 @@ Provides distributed caching with persistence and TTL management.
 """
 
 import logging
+import threading
 from typing import Any, Optional, Dict, List, Union
 import redis
 from redis.exceptions import RedisError, ConnectionError, TimeoutError
@@ -373,7 +374,12 @@ _cache_instance: Optional[RedisCache] = None
 
 
 def get_cache() -> Optional[RedisCache]:
-    """Get global cache instance."""
+    """Get global cache instance — prefer Dependencies container if available."""
+    from infrastructure.dependencies import get_deps
+    deps = get_deps()
+    if deps is not None and deps.redis_cache is not None:
+        return deps.redis_cache
+
     global _cache_instance
     if _cache_instance is None:
         try:
@@ -384,13 +390,26 @@ def get_cache() -> Optional[RedisCache]:
     return _cache_instance
 
 
+_cache_instances: Dict[SerializationFormat, RedisCache] = {}
+_cache_instances_lock = threading.Lock()
+
+
 def get_cache_with_format(format: SerializationFormat) -> Optional[RedisCache]:
-    """Get cache instance with specific serialization format."""
-    try:
-        return RedisCache(serialization_format=format)
-    except Exception as e:
-        logger.error(f"Failed to create Redis cache instance with format {format}: {e}")
-        return None
+    """Get cache instance with specific serialization format — cached by format."""
+    from infrastructure.dependencies import get_deps
+    deps = get_deps()
+    if deps is not None and deps.redis_cache is not None:
+        return deps.redis_cache
+
+    if format not in _cache_instances:
+        with _cache_instances_lock:
+            if format not in _cache_instances:
+                try:
+                    _cache_instances[format] = RedisCache(serialization_format=format)
+                except Exception as e:
+                    logger.error(f"Failed to create Redis cache instance with format {format}: {e}")
+                    return None
+    return _cache_instances.get(format)
 
 
 def set_cache_instance(cache: RedisCache) -> None:

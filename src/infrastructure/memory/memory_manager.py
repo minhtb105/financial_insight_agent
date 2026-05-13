@@ -524,7 +524,12 @@ _memory_manager_instance: Optional[MemoryManager] = None
 
 
 def get_memory_manager() -> Optional[MemoryManager]:
-    """Get global memory manager instance."""
+    """Get global memory manager instance — prefer Dependencies container."""
+    from infrastructure.dependencies import get_deps
+    deps = get_deps()
+    if deps is not None and deps.memory_manager is not None:
+        return deps.memory_manager
+
     global _memory_manager_instance
     if _memory_manager_instance is None:
         try:

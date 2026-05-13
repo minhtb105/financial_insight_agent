@@ -693,7 +693,12 @@ _episodic_memory_instance: Optional[EpisodicMemory] = None
 
 
 def get_episodic_memory() -> Optional[EpisodicMemory]:
-    """Get global episodic memory instance."""
+    """Get global episodic memory instance — prefer Dependencies container."""
+    from infrastructure.dependencies import get_deps
+    deps = get_deps()
+    if deps is not None and deps.episodic_memory is not None:
+        return deps.episodic_memory
+
     global _episodic_memory_instance
     if _episodic_memory_instance is None:
         try:

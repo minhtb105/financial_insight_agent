@@ -1,4 +1,4 @@
-from application.agent.enhanced_agent import enhanced_graph
+from application.agents.agent import graph
 
 
 def test_full_system():
@@ -43,7 +43,7 @@ def test_full_system():
             }
             
             # Stream the graph execution
-            for step in enhanced_graph.stream(init_state, stream_mode="values"):
+            for step in graph.stream(init_state, stream_mode="values"):
                 if "messages" in step:
                     # Print the final response
                     final_msg = step["messages"][-1]

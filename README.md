@@ -156,6 +156,85 @@ Enhanced Financial Insight Agent
 
 ---
 
+## 🔄 Agent Workflow
+
+### `tool_registry.py` — Nhiệm vụ
+
+Định nghĩa **9 LangChain tools**. Mỗi tool là wrapper của một service handler:
+
+```
+@tool("handle_<query_type>", description="...")
+def handle_<query_type>_tool(query=None):
+    1. Kiểm tra query payload
+    2. Gọi service handler (price_service, ranking_service, ...)
+    3. Convert kết quả → JSON string
+    4. Xử lý lỗi (None, Exception) → error message
+```
+
+### `tool_router.py` — Nhiệm vụ
+
+Chứa dict `TOOL_ROUTER` map `query_type` → tool function. Hàm `route_to_tool()`:
+
+1. Nhận `parsed_query` từ parser node
+2. Tra `query_type` trong `TOOL_ROUTER`
+3. Gọi `tool_fn.invoke(input={"query": parsed_query})`
+4. Không tìm thấy → **fallback** về `handle_price_query_tool` (kèm warning log)
+
+```python
+TOOL_ROUTER = {
+    "price_query": handle_price_query_tool,
+    "ranking_query": handle_ranking_query_tool,
+    "indicator_query": handle_indicator_query_tool,
+    "comparison_query": handle_compare_query_tool,
+    "company_query": handle_company_query_tool,
+    "aggregate_query": handle_aggregate_query_tool,
+    "financial_ratio_query": handle_financial_ratio_query_tool,
+    "news_sentiment_query": handle_news_sentiment_query_tool,
+    "portfolio_query": handle_portfolio_query_tool,
+}
+```
+
+### Agent Execution Flow
+
+```mermaid
+flowchart TD
+    A["User Query<br>(Tiếng Việt)"] --> B["Parser Node<br>agent.py"]
+    B --> C["NLP Parser<br>(LLM-based)"]
+    C --> D["parsed_query Dict<br>{ query_type, tickers,<br>requested_field,<br>start/end, ... }"]
+    D --> E["Executor Node<br>agent.py"]
+    E --> F["tool_router.py<br>route_to_tool()"]
+    F --> G{"TOOL_ROUTER<br>query_type → tool"}
+    G --> H["handle_price_query_tool"]
+    G --> I["handle_ranking_query_tool"]
+    G --> J["handle_indicator_query_tool"]
+    G --> K["handle_compare_query_tool"]
+    G --> L["handle_company_query_tool"]
+    G --> M["handle_aggregate_query_tool"]
+    G --> N["handle_financial_ratio_query_tool"]
+    G --> O["handle_news_sentiment_query_tool"]
+    G --> P["handle_portfolio_query_tool"]
+    G --> Q["❌ Fallback<br>price_query"]
+    H & I & J & K & L & M & N & O & P & Q --> R["Service Layer<br>price / indicator / company /<br>compare / ranking / aggregate /<br>financial_ratio / news_sentiment / portfolio"]
+    R --> S["JSON result string"]
+    S --> T["Final Answer Node<br>agent.py"]
+    T --> U["Response Formatter<br>(Tiếng Việt + confidence prefix)"]
+    U --> V["📋 Response to User"]
+```
+
+### Mối quan hệ giữa các thành phần
+
+| Thành phần | Vai trò | File |
+|---|---|---|
+| `parser_node` | Parse câu hỏi TV → `parsed_query` dict | `agent.py:69` |
+| `executor_node` | Gọi `route_to_tool`, validate input, return ToolMessage | `agent.py:124` |
+| `TOOL_ROUTER` | Dict map `query_type` → tool function | `tool_router.py:19` |
+| `route_to_tool()` | Tra cứu + fallback + invoke | `tool_router.py:32` |
+| `tool_registry.py` | 9 `@tool()` wrappers, mỗi tool gọi 1 service handler | `tool_registry.py:29-197` |
+| `*_service.py` | Business logic, gọi API `vnstock`, cache, tính toán | `services/*/` |
+| `final_answer_node` | Format JSON result → Tiếng Việt response | `agent.py:186` |
+
+---
+
 ## 🗂 Project Structure
 
 ```

@@ -280,7 +280,12 @@ _cache_config_instance: Optional[CacheConfig] = None
 
 
 def get_cache_config() -> CacheConfig:
-    """Get global cache configuration instance."""
+    """Get global cache configuration instance — prefer Dependencies container."""
+    from infrastructure.dependencies import get_deps
+    deps = get_deps()
+    if deps is not None and deps.cache_config is not None:
+        return deps.cache_config
+
     global _cache_config_instance
     if _cache_config_instance is None:
         _cache_config_instance = CacheConfig()

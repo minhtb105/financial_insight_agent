@@ -264,7 +264,12 @@ _serialization_manager: Optional[SerializationManager] = None
 
 
 def get_serialization_manager() -> SerializationManager:
-    """Get global serialization manager instance."""
+    """Get global serialization manager instance — prefer Dependencies container."""
+    from infrastructure.dependencies import get_deps
+    deps = get_deps()
+    if deps is not None and deps.serialization_manager is not None:
+        return deps.serialization_manager
+
     global _serialization_manager
     if _serialization_manager is None:
         _serialization_manager = SerializationManager()

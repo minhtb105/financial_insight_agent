@@ -476,7 +476,12 @@ _cache_manager_instance: Optional[CacheManager] = None
 
 
 def get_cache_manager() -> Optional[CacheManager]:
-    """Get global cache manager instance."""
+    """Get global cache manager instance — prefer Dependencies container."""
+    from infrastructure.dependencies import get_deps
+    deps = get_deps()
+    if deps is not None and deps.cache_manager is not None:
+        return deps.cache_manager
+
     global _cache_manager_instance
     if _cache_manager_instance is None:
         try:

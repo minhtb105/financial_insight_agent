@@ -1,9 +1,9 @@
-from application.agent.enhanced_agent import EnhancedStockAgent
+from application.agents.agent import StockAgent
 
 
 def test_enhanced_agent():
     """Test the enhanced agent with various query types."""
-    agent = EnhancedStockAgent()
+    agent = StockAgent()
     
     test_queries = [
         # Original query types

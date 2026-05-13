@@ -1,5 +1,5 @@
 import pytest
-from application.agent.agent import StockAgent
+from application.agents.agent import StockAgent
 from infrastructure.llm.nlp_parser import QueryParser
 
 

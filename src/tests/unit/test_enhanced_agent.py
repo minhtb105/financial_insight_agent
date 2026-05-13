@@ -3,14 +3,14 @@ Unit tests for EnhancedStockAgent.
 Uses relative imports for proper module resolution.
 """
 
-from application.agent.enhanced_agent import EnhancedStockAgent
+from application.agents.agent import StockAgent
 
 
 class TestEnhancedStockAgent:
     """Test EnhancedStockAgent functionality."""
     
     def __init__(self):
-        self.agent = EnhancedStockAgent()
+        self.agent = StockAgent()
     
     def test_confidence_scoring(self):
         """Test confidence scoring mechanism."""

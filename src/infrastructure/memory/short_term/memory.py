@@ -411,7 +411,12 @@ _short_term_memory_instance: Optional[ShortTermMemory] = None
 
 
 def get_short_term_memory() -> Optional[ShortTermMemory]:
-    """Get global short-term memory instance."""
+    """Get global short-term memory instance — prefer Dependencies container."""
+    from infrastructure.dependencies import get_deps
+    deps = get_deps()
+    if deps is not None and deps.short_term_memory is not None:
+        return deps.short_term_memory
+
     global _short_term_memory_instance
     if _short_term_memory_instance is None:
         try:

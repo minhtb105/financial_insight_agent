@@ -1,27 +1,46 @@
-from langchain_groq import ChatGroq
+import json
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
 from domain.entities.historical_query import HistoricalQuery
 from datetime import datetime
 import re
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 from infrastructure.llm.query_preprocessor import QueryPreprocessor
+from .llm_provider import LLMProvider
+
+from domain.schemas.price import PriceQueryParams
+from domain.schemas.ranking import RankingQueryParams
+from domain.schemas.comparison import ComparisonQueryParams
+from domain.schemas.aggregate import AggregateQueryParams
+from domain.schemas.indicator import IndicatorQueryParams
+from domain.schemas.company import CompanyQueryParams
+from domain.schemas.financial_ratio import FinancialRatioQueryParams
+from domain.schemas.news_sentiment import NewsSentimentQueryParams
+from domain.schemas.portfolio import PortfolioQueryParams
+from domain.schemas.alert import AlertQueryParams
+from domain.schemas.forecast import ForecastQueryParams
+from domain.schemas.sector import SectorQueryParams
+
+_QUERY_SCHEMAS = {
+    "price_query": PriceQueryParams,
+    "ranking_query": RankingQueryParams,
+    "comparison_query": ComparisonQueryParams,
+    "aggregate_query": AggregateQueryParams,
+    "indicator_query": IndicatorQueryParams,
+    "company_query": CompanyQueryParams,
+    "financial_ratio_query": FinancialRatioQueryParams,
+    "news_sentiment_query": NewsSentimentQueryParams,
+    "portfolio_query": PortfolioQueryParams,
+    "alert_query": AlertQueryParams,
+    "forecast_query": ForecastQueryParams,
+    "sector_query": SectorQueryParams,
+}
 
 
 class QueryParser:
-    """
-    Enhanced parser that combines rule-based preprocessing with LLM refinement.
-    Uses QueryPreprocessor for initial extraction and LLM for final validation.
-    """
-    
-    def __init__(self, model: str = "llama-3.1-8b-instant"):
-        from dotenv import load_dotenv
-        import os
-        load_dotenv()
-        api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
-            raise ValueError("Thiếu GROQ_API_KEY trong .env")
+    def __init__(self, model: Optional[str] = None, llm_provider: Optional[LLMProvider] = None):
+        self.llm_provider = llm_provider or LLMProvider()
 
         self.preprocessor = QueryPreprocessor()
         self.parser = PydanticOutputParser(pydantic_object=HistoricalQuery)
@@ -296,23 +315,111 @@ class QueryParser:
                         "requested_field": "sector_allocation"
                     }
                 }
+            ],
+            "alert_query": [
+                {
+                    "input": "Cảnh báo khi giá VCB vượt ngưỡng 100000",
+                    "output": {
+                        "query_type": "alert_query",
+                        "tickers": ["VCB"],
+                        "threshold": 100000,
+                        "condition": "above",
+                        "timeframe": "1d"
+                    }
+                },
+                {
+                    "input": "Báo cho tôi khi giá HPG xuống dưới 25000",
+                    "output": {
+                        "query_type": "alert_query",
+                        "tickers": ["HPG"],
+                        "threshold": 25000,
+                        "condition": "below",
+                        "timeframe": "1d"
+                    }
+                }
+            ],
+            "forecast_query": [
+                {
+                    "input": "Dự báo giá FPT trong 1 tuần tới",
+                    "output": {
+                        "query_type": "forecast_query",
+                        "tickers": ["FPT"],
+                        "timeframe": "1w",
+                        "model": None
+                    }
+                },
+                {
+                    "input": "Dự đoán xu hướng giá VNM tháng tới",
+                    "output": {
+                        "query_type": "forecast_query",
+                        "tickers": ["VNM"],
+                        "timeframe": "1m",
+                        "model": None
+                    }
+                }
+            ],
+            "sector_query": [
+                {
+                    "input": "Hiệu suất ngành ngân hàng trong tuần này",
+                    "output": {
+                        "query_type": "sector_query",
+                        "sector": "ngan hang",
+                        "metric": "performance",
+                        "timeframe": "1w"
+                    }
+                },
+                {
+                    "input": "Khối lượng giao dịch ngành bất động sản",
+                    "output": {
+                        "query_type": "sector_query",
+                        "sector": "bat dong san",
+                        "metric": "volume",
+                        "timeframe": "1w"
+                    }
+                }
             ]
         }
 
         self.prompt = PromptTemplate(
             template=self._build_prompt_template(),
-            input_variables=["query", "preprocessed", "few_shot_examples"],
+            input_variables=["query", "preprocessed", "few_shot_examples", "type_schema", "type_fields"],
             partial_variables={
                 "format_instructions": self.parser.get_format_instructions(),
                 "today": datetime.now().strftime("%Y-%m-%d")
             }
         )
         
-        self.chat = ChatGroq(model=model, temperature=0, api_key=api_key, max_retries=3)
-        self.structured_output_llm = self.chat.with_structured_output(
-            HistoricalQuery,
-            method='json_mode'
+        self.structured_output_llm = self.llm_provider.with_structured_output(
+            pydantic_object=HistoricalQuery,
+            method='json_mode',
+            fallback=True
         )
+
+    def _get_type_schema_json(self, query_type: str) -> str:
+        schema_cls = _QUERY_SCHEMAS.get(query_type)
+        if schema_cls is None:
+            return "{}"
+        schema = schema_cls.model_json_schema()
+        return json.dumps(schema, ensure_ascii=False, indent=2)
+
+    def _get_type_field_definitions(self, query_type: str) -> str:
+        schema_cls = _QUERY_SCHEMAS.get(query_type)
+        if schema_cls is None:
+            return "No specific field definitions."
+        schema = schema_cls.model_json_schema()
+        properties = schema.get("properties", {})
+        required = set(schema.get("required", []))
+        lines = []
+        for name, prop in properties.items():
+            req = "REQUIRED" if name in required else "optional"
+            typ = prop.get("type", "any")
+            desc = prop.get("description", "")
+            default = prop.get("default", "")
+            default_str = f" (default: {default})" if default != "" else ""
+            allowed = prop.get("enum", [])
+            allowed_str = f" allowed: {allowed}" if allowed else ""
+            lines.append(f"  - {name}: {typ} [{req}]{default_str}{allowed_str}{' - ' + desc if desc else ''}")
+        return "\n".join(lines)
 
     def _build_prompt_template(self) -> str:
         """Build the enhanced prompt template with few-shot examples."""
@@ -355,6 +462,12 @@ class QueryParser:
             - Nếu end không nêu rõ → end = {today}
             - Nếu không có thông tin thời gian → start = null, end = null, days/weeks/months = null
             - **Luôn** trả start/end ở định dạng "YYYY-MM-DD" khi có giá trị.
+
+            SCHEMA CHO LOẠI QUERY NÀY:
+            {type_schema}
+
+            FIELD DEFINITIONS:
+            {type_fields}
 
             Hãy sử dụng thông tin đã xử lý trước để hỗ trợ việc phân tích, nhưng hãy kiểm tra và điều chỉnh nếu cần.
             Hãy trả lời ngắn gọn, chỉ trả về JSON, không giải thích thêm.
@@ -411,14 +524,21 @@ class QueryParser:
             # Both ranking and comparison keywords - prioritize ranking
             priority_instruction = "\n⚠️ ƯU TIÊN CAO: Query này yêu cầu xếp hạng (min, max, cao nhất, thấp nhất). ĐÃY LÀ ranking_query, KHÔNG phải comparison_query."
         
-        # Step 2: Get few-shot context
-        few_shot_context = self._build_few_shot_context(query, preprocessed["query_type"])
+        # Step 2: Get type-specific schema and field definitions
+        parsed_type = preprocessed["query_type"]
+        type_schema = self._get_type_schema_json(parsed_type)
+        type_fields = self._get_type_field_definitions(parsed_type)
         
-        # Step 3: Build prompt
+        # Step 3: Get few-shot context
+        few_shot_context = self._build_few_shot_context(query, parsed_type)
+        
+        # Step 4: Build prompt
         prompt = self.prompt.format(
             query=query,
             preprocessed=preprocessed,
-            few_shot_examples=few_shot_context
+            few_shot_examples=few_shot_context,
+            type_schema=type_schema,
+            type_fields=type_fields,
         )
         
         # Step 4: Call LLM with confidence-based approach

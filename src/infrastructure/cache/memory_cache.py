@@ -382,7 +382,12 @@ _memory_cache_instance: Optional[MemoryCache] = None
 
 
 def get_memory_cache() -> Optional[MemoryCache]:
-    """Get global memory cache instance."""
+    """Get global memory cache instance — prefer Dependencies container."""
+    from infrastructure.dependencies import get_deps
+    deps = get_deps()
+    if deps is not None and deps.memory_cache is not None:
+        return deps.memory_cache
+
     global _memory_cache_instance
     if _memory_cache_instance is None:
         try:

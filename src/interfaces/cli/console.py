@@ -1,6 +1,9 @@
 import sys
 import json
-from application.agent.agent import StockAgent
+import uuid
+from application.agents.agent import StockAgent
+from infrastructure.observability import init_observability, get_logger
+from infrastructure.observability.logging.logger import request_id_var
 
 
 BANNER = r"""
@@ -81,7 +84,11 @@ class ConsoleApp:
                     continue
 
                 # Normal question → agent xử lý
-                response = self.agent.run(query)
+                request_id = str(uuid.uuid4())
+                request_id_var.set(request_id)
+                cli_logger = get_logger("cli")
+                cli_logger.info("Processing CLI query", extra={"query": query, "request_id": request_id})
+                response = self.agent.run(query, request_id=request_id)
 
                 if self.raw_output:
                     self.print_json(response)
@@ -97,6 +104,7 @@ class ConsoleApp:
 
 
 def main():
+    init_observability()
     app = ConsoleApp()
     app.run()
 

@@ -5,8 +5,8 @@ Uses relative imports to avoid sys.path manipulation.
 
 from infrastructure.llm.nlp_parser import QueryParser
 from infrastructure.llm.nlp_parser import EnhancedQueryParser
-from domain.entities.extended_query_type import ExtendedQueryType
-from domain.entities.extended_requested_field import ExtendedRequestedField
+from domain.entities.query_types import QueryType as ExtendedQueryType
+from domain.entities.requested_field import RequestedField as ExtendedRequestedField
 
 
 class TestQueryParserComprehensive:

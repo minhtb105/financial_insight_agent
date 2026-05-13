@@ -167,7 +167,3 @@ class HistoricalQuery(BaseModel):
         """Convert to JSON string."""
         import json
         return json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
-
-
-# Backward compatibility
-HistoricalQueryModel = HistoricalQuery
