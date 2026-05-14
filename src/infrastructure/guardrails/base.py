@@ -17,5 +17,5 @@ class Guardrail(ABC):
         ...
 
     @abstractmethod
-    async def validate(self, query: str, client_ip: str) -> GuardrailResult:
+    def validate(self, query: str, client_ip: str) -> GuardrailResult:
         ...

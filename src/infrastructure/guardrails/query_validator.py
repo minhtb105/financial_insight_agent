@@ -14,7 +14,7 @@ class QuerySizeLimit(Guardrail):
     def name(self) -> str:
         return "query_size_limit"
 
-    async def validate(self, query: str, client_ip: str) -> GuardrailResult:
+    def validate(self, query: str, client_ip: str) -> GuardrailResult:
         if len(query) > self.max_length:
             return GuardrailResult(
                 passed=False,
@@ -40,7 +40,7 @@ class TickerValidator(Guardrail):
     def name(self) -> str:
         return "ticker_validator"
 
-    async def validate(self, query: str, client_ip: str) -> GuardrailResult:
+    def validate(self, query: str, client_ip: str) -> GuardrailResult:
         matches = re.findall(self.ticker_pattern, query.upper())
         if not matches:
             return GuardrailResult(passed=True)
@@ -94,7 +94,7 @@ class PatternGuard(Guardrail):
     def name(self) -> str:
         return "pattern_guard"
 
-    async def validate(self, query: str, client_ip: str) -> GuardrailResult:
+    def validate(self, query: str, client_ip: str) -> GuardrailResult:
         for pattern in self.SQL_PATTERNS:
             if pattern.search(query):
                 return GuardrailResult(

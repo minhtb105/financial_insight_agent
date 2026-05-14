@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 import time
 from typing import Optional
+from collections import defaultdict
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -13,11 +14,28 @@ from infrastructure.observability.metrics.collector import get_metrics_collector
 from application.agents.agent import StockAgent
 from infrastructure.guardrails.pipeline import GuardrailPipeline
 
-_MAX_QUERY_LENGTH = 2000
+_MAX_QUERY_LENGTH = 1000
 
 agent: Optional[StockAgent] = None
 _request_logger = get_logger("api")
 _guardrail_pipeline: Optional[GuardrailPipeline] = None
+
+# Global IP-based rate limiter for endpoints without guardrails (health, ping)
+_ip_request_counts: dict[str, list[float]] = defaultdict(list)
+_IP_RATE_LIMIT = 60  # requests
+_IP_RATE_WINDOW = 60  # seconds
+
+
+def _check_global_rate_limit(client_ip: str) -> None:
+    now = time.time()
+    window_start = now - _IP_RATE_WINDOW
+    counts = _ip_request_counts[client_ip]
+    # Prune old entries
+    while counts and counts[0] < window_start:
+        counts.pop(0)
+    if len(counts) >= _IP_RATE_LIMIT:
+        raise HTTPException(status_code=429, detail="Too many requests. Please slow down.")
+    counts.append(now)
 
 
 # ---------------------------------------------------------------------------
@@ -96,7 +114,6 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -112,6 +129,7 @@ async def trace_middleware(request: Request, call_next):
     request.state.request_id = request_id
     start_time = time.time()
     try:
+        _check_global_rate_limit(_get_client_ip(request))
         response = await call_next(request)
         duration = time.time() - start_time
         metrics_collector = get_metrics_collector()
@@ -154,7 +172,7 @@ async def check_guardrails(query: str, request: Request):
     if _guardrail_pipeline is None:
         return
     client_ip = _get_client_ip(request)
-    result = await _guardrail_pipeline.check(query, client_ip)
+    result = _guardrail_pipeline.check(query, client_ip)
     if not result.passed:
         raise HTTPException(
             status_code=result.status_code,

@@ -514,10 +514,10 @@ class QueryPreprocessor:
         # Validate comparison query
         if parsed.get("query_type") == "comparison_query":
             if not parsed.get("compare_with") and len(parsed.get("tickers", [])) > 1:
-                # Split tickers: first is main, rest are compare_with
-                tickers = parsed["tickers"]
-                parsed["tickers"] = [tickers[0]]
-                parsed["compare_with"] = tickers[1:]
+                tickers = parsed.get("tickers", [])
+                if tickers:
+                    parsed["tickers"] = [tickers[0]]
+                    parsed["compare_with"] = tickers[1:]
         
         # Validate ranking query
         if parsed.get("query_type") == "ranking_query":

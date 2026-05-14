@@ -1,3 +1,6 @@
+from .tickers import VIETNAMESE_TICKERS
+
+
 class GuardrailConfig:
     rate_limit_requests: int = 20
     rate_limit_window_seconds: int = 60
@@ -12,10 +15,4 @@ class GuardrailConfig:
 
     ticker_pattern: str = r"\b[A-Z]{2,4}\b"
 
-    vietnamese_tickers: frozenset = frozenset({
-        "VCB", "HPG", "VIC", "VHM", "SSI", "TCB", "CTG", "BID", "MBB", "ACB",
-        "VPB", "HDB", "SHB", "STB", "EIB", "VRE", "PNJ", "MWG", "FPT", "GAS",
-        "PLX", "BVH", "VNM", "MSN", "REE", "HSG", "NKG", "DXG", "KDH", "NLG",
-        "VCI", "HCM", "PVI", "BMI", "POW", "NT2", "PC1", "QNS", "MCH", "HAG",
-        "HNG", "TTF", "VCG", "MSB", "SAB", "VJC", "ACV", "SBT", "VGC", "VIB",
-    })
+    vietnamese_tickers: frozenset = VIETNAMESE_TICKERS

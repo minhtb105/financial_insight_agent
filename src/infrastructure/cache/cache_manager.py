@@ -66,7 +66,7 @@ class CacheManager:
         enable_l2: bool = True,
         enable_l3: bool = False,  # Database tier not implemented yet
         l1_max_size: int = 500,
-        l1_ttl_hours: int = 0.5,  # 30 minutes
+        l1_ttl_hours: float = 0.5,  # 30 minutes
         l2_ttl_hours: int = 2,
         promotion_threshold: int = 3,  # Access count to promote to L1
         demotion_threshold_hours: int = 1,  # Hours since last access to demote from L1
@@ -155,6 +155,13 @@ class CacheManager:
         
         stats.total_access_time += duration
     
+    def _l1_size(self) -> int:
+        """Get L1 cache item count (using public API)."""
+        if not self.l1_cache:
+            return 0
+        info = self.l1_cache.info()
+        return info.get("size", 0) if isinstance(info, dict) else 0
+
     def _promote_to_l1(self, key: str, value: Any, namespace: str):
         """Promote item from L2 to L1 based on access patterns."""
         if not self.enable_l1 or not self.l1_cache:
@@ -162,7 +169,7 @@ class CacheManager:
         
         try:
             # Check if L1 has space or can evict
-            if len(self.l1_cache._cache) >= self.l1_cache.max_size:
+            if self._l1_size() >= self.l1_cache.max_size:
                 # L1 is full, check for items to demote
                 self._demote_l1_items()
             
@@ -179,26 +186,40 @@ class CacheManager:
             return
         
         try:
-            # Get items sorted by last access time
-            l1_items = list(self.l1_cache._access_order.items())
-            l1_items.sort(key=lambda x: x[1])  # Sort by access time (oldest first)
+            l1_keys = self.l1_cache.keys(pattern="*", namespace=None)
+            if not l1_keys:
+                return
+
+            # Get access times via individual TTL info
+            key_time_pairs = []
+            for full_key in l1_keys:
+                ttl = self.l1_cache.ttl(full_key, namespace=None)
+                if ttl is not None:
+                    key_time_pairs.append((full_key, ttl))
+
+            key_time_pairs.sort(key=lambda x: x[1])
+
+            # Demote half of the items (oldest first)
+            items_to_demote = key_time_pairs[:max(len(key_time_pairs) // 2, 1)]
             
-            # Demote half of the items
-            items_to_demote = l1_items[:len(l1_items) // 2]
-            
-            for key, _ in items_to_demote:
+            for full_key, _ in items_to_demote:
                 try:
-                    # Get value from L1
-                    value = self.l1_cache.get(key.split(":", 1)[1], namespace=key.split(":", 1)[0])
+                    # Parse namespace:key — MemoryCache._get_key format is "{namespace}:{key}"
+                    colon_idx = full_key.find(":")
+                    if colon_idx == -1:
+                        logger.warning(f"Invalid full key format (no namespace separator): {full_key}")
+                        continue
+                    ns = full_key[:colon_idx]
+                    k = full_key[colon_idx + 1:]
+
+                    value = self.l1_cache.get(k, namespace=ns)
                     if value:
-                        # Store in L2 with longer TTL
-                        self.l2_cache.set(key, value, ttl_hours=2)
-                    
-                    # Remove from L1
-                    self.l1_cache.delete(key.split(":", 1)[1], namespace=key.split(":", 1)[0])
-                    
+                        self.l2_cache.set(full_key, value, ttl_hours=2)
+
+                    self.l1_cache.delete(k, namespace=ns)
+
                 except Exception as e:
-                    logger.error(f"Failed to demote key {key} from L1 to L2: {e}")
+                    logger.error(f"Failed to demote key {full_key} from L1 to L2: {e}")
                     
         except Exception as e:
             logger.error(f"Failed to demote L1 items: {e}")

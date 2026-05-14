@@ -231,6 +231,7 @@ class Dependencies:
 # Thread-safe singleton access
 # ------------------------------------------------------------------
 _deps: Optional[Dependencies] = None
+_deps_initialized: bool = False
 _deps_lock = threading.Lock()
 
 
@@ -245,11 +246,19 @@ def get_deps() -> Optional[Dependencies]:
 
 
 def init_deps() -> Dependencies:
-    """Create (if needed) and initialise the global Dependencies container."""
-    deps = get_deps()
-    if deps is not None:
-        deps.init()
-    return deps
+    """Create (if needed) and initialise the global Dependencies container.
+    
+    Thread-safe: creation and initialisation are performed atomically under lock.
+    Subsequent calls are idempotent.
+    """
+    global _deps, _deps_initialized
+    with _deps_lock:
+        if _deps is None:
+            _deps = Dependencies()
+        if not _deps_initialized:
+            _deps.init()
+            _deps_initialized = True
+    return _deps
 
 
 def shutdown_deps() -> None:

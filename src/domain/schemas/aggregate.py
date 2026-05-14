@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field, field_validator
 
 class AggregateQueryParams(BaseModel):
     query_type: str = "aggregate_query"
-    tickers: List[str] = Field(..., min_length=2, description="At least 2 tickers for aggregation")
+    tickers: List[str] = Field(..., min_length=1, description="At least 1 ticker for aggregation")
     requested_field: Optional[str] = Field("close")
     aggregate: Optional[str] = Field("mean")
     start: Optional[str] = None

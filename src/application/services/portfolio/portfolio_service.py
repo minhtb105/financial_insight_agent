@@ -23,16 +23,8 @@ class PortfolioManager:
             try:
                 with open(self.portfolio_file, 'r') as f:
                     return json.load(f)
-            except:
+            except (json.JSONDecodeError, IOError) as e:
                 return {"holdings": {}, "transactions": []}
-        return {"holdings": {}, "transactions": []}
-
-    def save_portfolio(self):
-        try:
-            with open(self.portfolio_file, 'w') as f:
-                json.dump(self.portfolio, f, indent=2)
-        except Exception as e:
-            print(f"Error saving portfolio: {e}")
 
     def add_holding(self, ticker: str, quantity: int, price: float):
         if ticker not in self.portfolio["holdings"]:
@@ -140,6 +132,9 @@ def get_portfolio_performance(query: dict) -> Dict[str, Any]:
         for transaction in transactions:
             if transaction["type"] == "buy":
                 total_invested += transaction["quantity"] * transaction["price"]
+            elif transaction["type"] == "sell":
+                # Track realized proceeds or reduce cost basis
+                total_invested -= transaction["quantity"] * transaction["price"]
 
         portfolio_value = get_portfolio_value(query)
         if "portfolio_value" in portfolio_value:
@@ -186,7 +181,10 @@ def get_portfolio_allocation(query: dict) -> Dict[str, Any]:
                         company_info = client.company.overview()
                         sector = "Unknown"
                         if company_info is not None and not company_info.empty:
-                            sector = company_info.get("sector", "Unknown")
+                            if "sector" in company_info.columns and len(company_info) > 0:
+                                sector = company_info["sector"].iloc[0]
+                            else:
+                                sector = "Unknown"
                         if cache:
                             cache.set(sector_cache_key, sector, ttl_hours=_SECTOR_TTL_HOURS)
 
@@ -264,23 +262,24 @@ def handle_portfolio_query(parsed: Dict[str, Any]):
                 current_holdings[ticker] += quantity
 
             portfolio_manager.portfolio["holdings"] = current_holdings
+            portfolio_manager.save_portfolio()
 
         if requested_field == "portfolio_value":
             return get_portfolio_value(parsed)
         elif requested_field == "portfolio_performance":
             return get_portfolio_performance(parsed)
         elif requested_field == "portfolio_allocation":
-            return get_portfolio_allocation(parsed)
-        else:
-            result = {}
-
             portfolio_value = get_portfolio_value(parsed)
-            if portfolio_value:
+            if portfolio_value and "error" not in portfolio_value:
                 result["portfolio_value"] = portfolio_value
 
             portfolio_performance = get_portfolio_performance(parsed)
-            if portfolio_performance:
+            if portfolio_performance and "error" not in portfolio_performance:
                 result["portfolio_performance"] = portfolio_performance
+
+            portfolio_allocation = get_portfolio_allocation(parsed)
+            if portfolio_allocation and "error" not in portfolio_allocation:
+                result["portfolio_allocation"] = portfolio_allocation
 
             portfolio_allocation = get_portfolio_allocation(parsed)
             if portfolio_allocation:

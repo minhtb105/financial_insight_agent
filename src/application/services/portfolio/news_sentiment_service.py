@@ -16,7 +16,9 @@ class NewsAPIClient:
         return {ticker: 0.0 for ticker in tickers}
 
 
-def get_news_data(query: dict) -> Dict[str, Any]:
+from typing import Dict, Any, List, Optional
+
+def get_news_data(query: dict) -> Optional[Dict[str, Any]]:
     tickers = query.get("tickers", [])
     if not tickers:
         return None
@@ -46,7 +48,7 @@ def get_news_data(query: dict) -> Dict[str, Any]:
         return None
 
 
-def get_sentiment_data(query: dict) -> Dict[str, Any]:
+def get_sentiment_data(query: dict) -> Optional[Dict[str, Any]]:
     tickers = query.get("tickers", [])
     if not tickers:
         return None
@@ -67,7 +69,7 @@ def get_sentiment_data(query: dict) -> Dict[str, Any]:
         return sentiment_scores if any(v != 0.0 for v in sentiment_scores.values()) else None
 
     except Exception as e:
-        print(f"Error fetching sentiment for {tickers}: {e}")
+        logger.error(f"Error fetching sentiment for {tickers}: {e}", exc_info=True)
         return None
 
 
@@ -79,7 +81,7 @@ def get_social_volume(query: dict) -> Dict[str, Any]:
     return {ticker: 100 for ticker in tickers}
 
 
-def analyze_news_sentiment(query: dict) -> Dict[str, Any]:
+def analyze_news_sentiment(query: dict) -> Optional[Dict[str, Any]]:
     tickers = query.get("tickers", [])
     if not tickers:
         return None
@@ -109,11 +111,14 @@ def analyze_news_sentiment(query: dict) -> Dict[str, Any]:
         return result if result else None
 
     except Exception as e:
-        print(f"Error analyzing news sentiment for {tickers}: {e}")
+        logger.error(f"Error analyzing news sentiment for {tickers}: {e}", exc_info=True)
         return None
 
 
-def compare_news_sentiment(query: dict) -> Dict[str, Any]:
+def compare_news_sentiment(query: dict) -> Optional[Dict[str, Any]]:
+    if not query.get("tickers") or len(query["tickers"]) != 1:
+        return None
+    
     main_ticker = query["tickers"][0]
     compare_tickers = query.get("compare_with", [])
 
@@ -140,7 +145,7 @@ def compare_news_sentiment(query: dict) -> Dict[str, Any]:
         return result if result else None
 
     except Exception as e:
-        print(f"Error comparing news sentiment: {e}")
+        logger.error(f"Error comparing news sentiment: {e}", exc_info=True)
         return None
 
 

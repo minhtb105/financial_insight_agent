@@ -1,7 +1,10 @@
+import logging
 import re
 from typing import List, Optional
 from langchain_core.messages import SystemMessage, HumanMessage
 from infrastructure.llm.llm_provider import LLMProvider, MultiQuery
+
+logger = logging.getLogger(__name__)
 
 
 class HybridQuerySplitter:
@@ -22,6 +25,8 @@ class HybridQuerySplitter:
         Nếu text phù hợp rule → trả về list câu tách.
         Nếu không phù hợp → trả về [] để LLM xử lý.
         """
+        if not text:
+            return []
 
         original = text.lower()
 
@@ -37,7 +42,6 @@ class HybridQuerySplitter:
             if re.search(r"(sma|rsi|macd|giá|volume|ohlcv)", original):
                 # Ex: "SMA9 và SMA20"
                 if re.search(r"sma\s*\d+\s* và\s* sma?\s*\d+", original):
-                    # 1 intern -> return []
                     return []
 
             # Split when 2 actions appear
@@ -63,6 +67,9 @@ class HybridQuerySplitter:
     # LLM FALLBACK
     # ----------------------------------------------------------------------
     def _llm_split(self, text: str) -> List[str]:
+        if not text or not text.strip():
+            return []
+
         system_prompt = (
             "Bạn là bộ tách câu hỏi tài chính.\n"
             "Nhiệm vụ: tách câu đầu vào thành danh sách các câu hỏi độc lập.\n"
@@ -71,12 +78,15 @@ class HybridQuerySplitter:
             "- Output phải là JSON hợp lệ theo schema"
         )
 
-        resp = self.llm.invoke([
-            SystemMessage(system_prompt),
-            HumanMessage(text),
-        ])
-
-        return resp.queries
+        try:
+            resp = self.llm.invoke([
+                SystemMessage(system_prompt),
+                HumanMessage(text),
+            ])
+            return resp.queries if resp and hasattr(resp, "queries") else []
+        except Exception:
+            logger.exception("LLM split failed")
+            return []
 
     # ----------------------------------------------------------------------
     # PUBLIC API
@@ -85,6 +95,9 @@ class HybridQuerySplitter:
         """
         Return list of questions answered by hybrid approach.
         """
+        if not text or not text.strip():
+            return []
+
         # 1) Try rule first
         rule_result = self._rule_split(text)
         if rule_result:

@@ -1,4 +1,6 @@
-from application.agents.agent import graph
+from application.agents.agent import build_graph
+
+graph = build_graph()
 
 
 def test_full_system():

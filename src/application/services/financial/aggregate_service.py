@@ -15,8 +15,8 @@ def _cache() -> Optional[Any]:
 
 def handle_aggregate_query(parsed: Dict[str, Any]) -> Dict[str, Any]:
     tickers = parsed.get("tickers") or []
-    if not tickers or len(tickers) < 2:
-        return {"error": "Need at least 2 tickers for aggregation"}
+    if not tickers or len(tickers) < 1:
+        return {"error": "Need at least 1 ticker for aggregation"}
 
     requested_field = parsed.get("requested_field", "close")
     aggregate = parsed.get("aggregate", "mean")

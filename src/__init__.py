@@ -28,6 +28,8 @@ from .infrastructure import (
     VNStockClient,
     QueryParser,
     QueryPreprocessor,
+    TwoPhaseParser,
+    IntentClassifier,
 )
 
 from .interfaces import (
@@ -63,6 +65,8 @@ __all__ = [
     'VNStockClient',
     'QueryParser',
     'QueryPreprocessor',
+    'TwoPhaseParser',
+    'IntentClassifier',
 
     'ConsoleApp',
 ]

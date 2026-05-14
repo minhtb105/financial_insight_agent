@@ -1,5 +1,5 @@
-import asyncio
 import time
+import threading
 from collections import defaultdict
 
 from .base import Guardrail, GuardrailResult
@@ -13,10 +13,10 @@ class TokenBucket:
         self.refill_rate = refill_rate
         self.refill_period = refill_period
         self.last_refill = time.monotonic()
-        self.lock = asyncio.Lock()
+        self.lock = threading.Lock()
 
-    async def consume(self, tokens: int = 1) -> bool:
-        async with self.lock:
+    def consume(self, tokens: int = 1) -> bool:
+        with self.lock:
             now = time.monotonic()
             elapsed = now - self.last_refill
             self.tokens = min(
@@ -42,16 +42,16 @@ class RateLimiter(Guardrail):
         )
         self.hourly_counts: dict[str, tuple[int, float]] = {}
         self.hourly_limit = cfg.rate_limit_hourly_per_ip
-        self.hourly_lock = asyncio.Lock()
-        self.cleanup_lock = asyncio.Lock()
+        self.hourly_lock = threading.Lock()
+        self.cleanup_lock = threading.Lock()
 
     @property
     def name(self) -> str:
         return "rate_limiter"
 
-    async def validate(self, query: str, client_ip: str) -> GuardrailResult:
+    def validate(self, query: str, client_ip: str) -> GuardrailResult:
         bucket = self.buckets[client_ip]
-        if not await bucket.consume():
+        if not bucket.consume():
             return GuardrailResult(
                 passed=False,
                 reason="Too many requests. Please slow down.",
@@ -59,7 +59,7 @@ class RateLimiter(Guardrail):
                 metadata={"client_ip": client_ip, "limit_type": "burst"},
             )
 
-        async with self.hourly_lock:
+        with self.hourly_lock:
             now = time.monotonic()
             count, window_start = self.hourly_counts.get(client_ip, (0, now))
 

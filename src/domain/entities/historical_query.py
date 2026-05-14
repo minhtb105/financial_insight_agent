@@ -6,7 +6,7 @@ a parsed financial query with all its components and metadata.
 """
 
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -115,13 +115,16 @@ class HistoricalQuery(BaseModel):
         start_date = end_date
         
         if self.days:
-            start_date = end_date.replace(day=end_date.day - self.days)
+            start_date = end_date - timedelta(days=self.days)
         elif self.weeks:
-            start_date = end_date.replace(day=end_date.day - (self.weeks * 7))
+            start_date = end_date - timedelta(weeks=self.weeks)
         elif self.months:
-            start_date = end_date.replace(month=end_date.month - self.months)
+            start_date = end_date - timedelta(days=self.months * 30)
         elif self.years:
-            start_date = end_date.replace(year=end_date.year - self.years)
+            try:
+                start_date = end_date.replace(year=end_date.year - self.years)
+            except ValueError:
+                start_date = end_date.replace(year=end_date.year - self.years, day=28)
         
         return {
             "start": start_date.strftime("%Y-%m-%d"),

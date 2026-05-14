@@ -7,14 +7,13 @@ Ensures system security, reliability, and financial domain safety.
 
 import re
 import logging
-import time
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from collections import defaultdict
 from enum import Enum
 
 from infrastructure.guardrails.type_validators import validate_parsed_query
+from infrastructure.guardrails.tickers import VIETNAMESE_TICKERS
 
 logger = logging.getLogger(__name__)
 
@@ -53,213 +52,6 @@ class ValidationResultData:
     processed_query: Optional[Dict[str, Any]] = None
 
 
-class InputGuardrails:
-    """Input validation guardrails."""
-    
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """
-        Initialize input guardrails.
-        
-        Args:
-            config: Configuration for guardrails
-        """
-        self.config = config or self._get_default_config()
-        self._rate_limiter = RateLimiter(self.config.get("rate_limit", {}))
-        self._ticker_whitelist = self._load_ticker_whitelist()
-        self._injection_patterns = self._compile_injection_patterns()
-    
-    def _get_default_config(self) -> Dict[str, Any]:
-        """Get default guardrails configuration."""
-        return {
-            "query_length": {"min": 5, "max": 500},
-            "rate_limit": {"requests_per_hour": 100, "requests_per_minute": 10},
-            "injection_detection": {
-                "sql_injection": True,
-                "xss_injection": True,
-                "command_injection": True
-            },
-            "content_filtering": {
-                "toxic_content": True,
-                "pii_detection": True,
-                "api_keys": True
-            },
-            "ticker_validation": {
-                "whitelist_enabled": True,
-                "max_tickers": 10
-            }
-        }
-    
-    def _load_ticker_whitelist(self) -> set:
-        """Load ticker whitelist for validation."""
-        # Common Vietnamese stock tickers
-        return {
-            "VNM", "VIC", "VCB", "MSN", "FPT", "GAS", "HPG", "PLX", "MWG", "CTG",
-            "BID", "ACB", "SHB", "STB", "TPB", "EIB", "HDB", "TCB", "VIB", "LPB",
-            "SSB", "BAB", "BCM", "BSR", "CTD", "DIG", "DXG", "GMD", "HSG", "KDH",
-            "LCG", "LGC", "LIX", "NVL", "PDR", "REE", "SBT", "SCR", "SHP", "TCH",
-            "TDC", "TDG", "TID", "TNA", "TNC", "TPC", "VCG", "VCS", "VHC", "VHM",
-            "VIB", "VIC", "VIF", "VNG", "VRC", "VRE", "VSC", "WAC", "WBS", "WEC"
-        }
-    
-    def _compile_injection_patterns(self) -> Dict[str, re.Pattern]:
-        """Compile regex patterns for injection detection."""
-        patterns = {}
-        
-        if self.config["injection_detection"]["sql_injection"]:
-            sql_patterns = [
-                r"(\b(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|UNION|SCRIPT)\b)",
-                r"('.*'|\".*\")",
-                r"(--|\/\*|\*\/|;|\||&|\$)",
-                r"(OR\s+1\s*=\s*1|AND\s+1\s*=\s*1)"
-            ]
-            patterns["sql_injection"] = re.compile("|".join(sql_patterns), re.IGNORECASE)
-        
-        if self.config["injection_detection"]["xss_injection"]:
-            xss_patterns = [
-                r"(<script[^>]*>.*?</script>)",
-                r"(javascript:|data:|vbscript:|onload|onerror|onclick)",
-                r"(<iframe[^>]*>.*?</iframe>)",
-                r"(<object[^>]*>.*?</object>)"
-            ]
-            patterns["xss_injection"] = re.compile("|".join(xss_patterns), re.IGNORECASE)
-        
-        if self.config["injection_detection"]["command_injection"]:
-            cmd_patterns = [
-                r"(\|\||&&|\||;|\$\(.*?\)|\`.*?\`)",
-                r"(rm\s+|del\s+|format\s+|shutdown\s+|reboot\s+)",
-                r"(cat\s+|type\s+|ls\s+|dir\s+|find\s+)"
-            ]
-            patterns["command_injection"] = re.compile("|".join(cmd_patterns), re.IGNORECASE)
-        
-        return patterns
-    
-    def validate_query(self, query: str, session_id: Optional[str] = None) -> ValidationResultData:
-        """
-        Validate input query with comprehensive checks.
-        
-        Args:
-            query: User query string
-            session_id: Session identifier for rate limiting
-            
-        Returns:
-            Validation result with issues if any
-        """
-        issues = []
-        processed_query = query.strip()
-        
-        # 1. Query length validation
-        length_result = self._validate_query_length(processed_query)
-        if length_result.status == ValidationResult.FAIL:
-            issues.extend(length_result.issues)
-        
-        # 2. Rate limiting
-        if session_id:
-            rate_result = self._rate_limiter.check_rate_limit(session_id)
-            if rate_result.status == ValidationResult.FAIL:
-                issues.extend(rate_result.issues)
-        
-        # 3. Injection detection
-        injection_result = self._detect_injection(processed_query)
-        if injection_result.status == ValidationResult.FAIL:
-            issues.extend(injection_result.issues)
-        
-        # 4. Content filtering
-        content_result = self._filter_content(processed_query)
-        if content_result.status == ValidationResult.FAIL:
-            issues.extend(content_result.issues)
-        
-        # 5. Query sanitization
-        if not issues:
-            processed_query = self._sanitize_query(processed_query)
-        
-        status = ValidationResult.FAIL if issues else ValidationResult.PASS
-        return ValidationResultData(
-            status=status,
-            issues=issues,
-            processed_query={"original": query, "sanitized": processed_query}
-        )
-    
-    def _validate_query_length(self, query: str) -> ValidationResultData:
-        """Validate query length."""
-        min_len = self.config["query_length"]["min"]
-        max_len = self.config["query_length"]["max"]
-        issues = []
-        
-        if len(query) < min_len:
-            issues.append(ValidationIssue(
-                level=GuardrailLevel.HIGH,
-                code="QUERY_TOO_SHORT",
-                message=f"Query too short: {len(query)} characters (minimum {min_len})"
-            ))
-        elif len(query) > max_len:
-            issues.append(ValidationIssue(
-                level=GuardrailLevel.HIGH,
-                code="QUERY_TOO_LONG",
-                message=f"Query too long: {len(query)} characters (maximum {max_len})"
-            ))
-        
-        return ValidationResultData(
-            status=ValidationResult.FAIL if issues else ValidationResult.PASS,
-            issues=issues
-        )
-    
-    def _detect_injection(self, query: str) -> ValidationResultData:
-        """Detect injection patterns in query."""
-        issues = []
-        
-        for pattern_name, pattern in self._injection_patterns.items():
-            if pattern.search(query):
-                issues.append(ValidationIssue(
-                    level=GuardrailLevel.CRITICAL,
-                    code=f"{pattern_name.upper()}_DETECTED",
-                    message=f"Potential {pattern_name} detected in query"
-                ))
-        
-        return ValidationResultData(
-            status=ValidationResult.FAIL if issues else ValidationResult.PASS,
-            issues=issues
-        )
-    
-    def _filter_content(self, query: str) -> ValidationResultData:
-        """Filter toxic content and PII."""
-        issues = []
-        
-        # Check for API keys (simplified pattern)
-        api_key_pattern = re.compile(r"(api[_-]?key|secret[_-]?key|token)\s*[:=]\s*[a-zA-Z0-9]{10,}", re.IGNORECASE)
-        if api_key_pattern.search(query):
-            issues.append(ValidationIssue(
-                level=GuardrailLevel.HIGH,
-                code="API_KEY_DETECTED",
-                message="API key detected in query"
-            ))
-        
-        # Check for email addresses (potential PII)
-        email_pattern = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
-        if email_pattern.search(query):
-            issues.append(ValidationIssue(
-                level=GuardrailLevel.MEDIUM,
-                code="EMAIL_DETECTED",
-                message="Email address detected (potential PII)"
-            ))
-        
-        return ValidationResultData(
-            status=ValidationResult.FAIL if issues else ValidationResult.PASS,
-            issues=issues
-        )
-    
-    def _sanitize_query(self, query: str) -> str:
-        """Sanitize query by removing potentially dangerous characters."""
-        # Remove excessive whitespace and normalize
-        sanitized = re.sub(r'\s+', ' ', query).strip()
-        
-        # Remove potential injection characters (basic sanitization)
-        dangerous_chars = ['<', '>', '"', "'", ';', '|', '&', '$', '`']
-        for char in dangerous_chars:
-            sanitized = sanitized.replace(char, '')
-        
-        return sanitized
-
-
 class StepWiseGuardrails:
     """Step-wise validation guardrails for LangGraph pipeline."""
     
@@ -293,15 +85,8 @@ class StepWiseGuardrails:
         }
     
     def _load_ticker_whitelist(self) -> set:
-        """Load ticker whitelist."""
-        return {
-            "VNM", "VIC", "VCB", "MSN", "FPT", "GAS", "HPG", "PLX", "MWG", "CTG",
-            "BID", "ACB", "SHB", "STB", "TPB", "EIB", "HDB", "TCB", "VIB", "LPB",
-            "SSB", "BAB", "BCM", "BSR", "CTD", "DIG", "DXG", "GMD", "HSG", "KDH",
-            "LCG", "LGC", "LIX", "NVL", "PDR", "REE", "SBT", "SCR", "SHP", "TCH",
-            "TDC", "TDG", "TID", "TNA", "TNC", "TPC", "VCG", "VCS", "VHC", "VHM",
-            "VIB", "VIC", "VIF", "VNG", "VRC", "VRE", "VSC", "WAC", "WBS", "WEC"
-        }
+        """Load ticker whitelist from canonical source."""
+        return set(VIETNAMESE_TICKERS)
     
     def validate_parser_output(self, parsed_query: Dict[str, Any]) -> ValidationResultData:
         issues = []
@@ -434,14 +219,17 @@ class StepWiseGuardrails:
             issues=issues
         )
     
-    def _validate_dates(self, start_date: str, end_date: str) -> ValidationResultData:
+    def _validate_dates(self, start_date: Optional[str], end_date: Optional[str]) -> ValidationResultData:
         """Validate date range."""
         issues = []
-        
+
+        if not start_date or not end_date:
+            return ValidationResultData(status=ValidationResult.PASS, issues=issues)
+
         try:
             start = datetime.strptime(start_date, "%Y-%m-%d")
             end = datetime.strptime(end_date, "%Y-%m-%d")
-        except ValueError as e:
+        except (ValueError, TypeError) as e:
             issues.append(ValidationIssue(
                 level=GuardrailLevel.HIGH,
                 code="INVALID_DATE_FORMAT",
@@ -670,74 +458,9 @@ class OutputGuardrails:
         return text
 
 
-class RateLimiter:
-    """Rate limiting for sessions."""
-    
-    def __init__(self, config: Dict[str, int]):
-        """
-        Initialize rate limiter.
-        
-        Args:
-            config: Rate limiting configuration
-        """
-        self.requests_per_hour = config.get("requests_per_hour", 100)
-        self.requests_per_minute = config.get("requests_per_minute", 10)
-        self._session_requests = defaultdict(list)
-    
-    def check_rate_limit(self, session_id: str) -> ValidationResultData:
-        """Check if session has exceeded rate limits."""
-        issues = []
-        current_time = time.time()
-        
-        # Clean old requests
-        self._clean_old_requests(session_id, current_time)
-        
-        # Check minute limit
-        minute_requests = [req_time for req_time in self._session_requests[session_id] 
-                          if current_time - req_time < 60]
-        if len(minute_requests) >= self.requests_per_minute:
-            issues.append(ValidationIssue(
-                level=GuardrailLevel.HIGH,
-                code="RATE_LIMIT_EXCEEDED_MINUTE",
-                message=f"Rate limit exceeded: {len(minute_requests)}/{self.requests_per_minute} requests per minute"
-            ))
-        
-        # Check hour limit
-        hour_requests = [req_time for req_time in self._session_requests[session_id] 
-                        if current_time - req_time < 3600]
-        if len(hour_requests) >= self.requests_per_hour:
-            issues.append(ValidationIssue(
-                level=GuardrailLevel.HIGH,
-                code="RATE_LIMIT_EXCEEDED_HOUR",
-                message=f"Rate limit exceeded: {len(hour_requests)}/{self.requests_per_hour} requests per hour"
-            ))
-        
-        # Record this request
-        self._session_requests[session_id].append(current_time)
-        
-        status = ValidationResult.FAIL if issues else ValidationResult.PASS
-        return ValidationResultData(status=status, issues=issues)
-    
-    def _clean_old_requests(self, session_id: str, current_time: float):
-        """Clean old requests from session."""
-        self._session_requests[session_id] = [
-            req_time for req_time in self._session_requests[session_id]
-            if current_time - req_time < 3600  # Keep last hour
-        ]
-
-
 # Global guardrails instances
-_input_guardrails: Optional[InputGuardrails] = None
 _step_guardrails: Optional[StepWiseGuardrails] = None
 _output_guardrails: Optional[OutputGuardrails] = None
-
-
-def get_input_guardrails() -> InputGuardrails:
-    """Get global input guardrails instance."""
-    global _input_guardrails
-    if _input_guardrails is None:
-        _input_guardrails = InputGuardrails()
-    return _input_guardrails
 
 
 def get_step_guardrails() -> StepWiseGuardrails:
@@ -756,13 +479,3 @@ def get_output_guardrails() -> OutputGuardrails:
     return _output_guardrails
 
 
-def set_guardrails_instances(
-    input_guardrails: InputGuardrails,
-    step_guardrails: StepWiseGuardrails,
-    output_guardrails: OutputGuardrails
-) -> None:
-    """Set global guardrails instances (for testing)."""
-    global _input_guardrails, _step_guardrails, _output_guardrails
-    _input_guardrails = input_guardrails
-    _step_guardrails = step_guardrails
-    _output_guardrails = output_guardrails

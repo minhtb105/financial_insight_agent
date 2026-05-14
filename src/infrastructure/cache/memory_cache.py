@@ -41,7 +41,8 @@ class MemoryCache:
         self._access_order: OrderedDict[str, float] = OrderedDict()
         self._lock = threading.RLock()
         
-        # Cleanup thread
+        # Cleanup thread with stop event for graceful shutdown
+        self._stop_event = threading.Event()
         self._cleanup_thread = threading.Thread(target=self._cleanup_expired, daemon=True)
         self._cleanup_thread.start()
         
@@ -85,9 +86,11 @@ class MemoryCache:
     
     def _cleanup_expired(self) -> None:
         """Background cleanup of expired items."""
-        while True:
+        while not self._stop_event.is_set():
             try:
-                time.sleep(self.cleanup_interval)
+                self._stop_event.wait(timeout=self.cleanup_interval)
+                if self._stop_event.is_set():
+                    break
                 self._cleanup_expired_items()
             except Exception as e:
                 logger.error(f"Error in cleanup thread: {e}")
@@ -370,7 +373,10 @@ class MemoryCache:
             return 0.0
     
     def close(self) -> None:
-        """Close cache (cleanup resources)."""
+        """Close cache (cleanup resources) with graceful thread shutdown."""
+        self._stop_event.set()
+        if self._cleanup_thread.is_alive():
+            self._cleanup_thread.join(timeout=5)
         with self._lock:
             self._cache.clear()
             self._access_order.clear()

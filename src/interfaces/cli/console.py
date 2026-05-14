@@ -83,6 +83,11 @@ class ConsoleApp:
                     self.handle_command(query)
                     continue
 
+                # Basic input guardrail
+                if len(query) > 1000:
+                    print("⚠️  Query quá dài (tối đa 1000 ký tự).")
+                    continue
+
                 # Normal question → agent xử lý
                 request_id = str(uuid.uuid4())
                 request_id_var.set(request_id)
@@ -96,6 +101,9 @@ class ConsoleApp:
                     print("\n📊 Kết quả:")
                     self.print_json(response)
 
+            except EOFError:
+                print("\nBye!")
+                break
             except KeyboardInterrupt:
                 print("\nBye!")
                 break

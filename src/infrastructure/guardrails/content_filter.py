@@ -149,17 +149,7 @@ class ContentFilter(Guardrail):
         normalized = self._normalize_homoglyphs(normalized)
         return normalized
 
-    def _decode_multiline_encoding(self, query: str) -> str:
-        if not re.search(r'reverse|flip|fdp|split|escape', query, re.I):
-            return query
-
-        reversed_pattern = re.compile(r'(?:unscramble|reverse|read backwards|cntroper)', re.I)
-        if reversed_pattern.search(query):
-            return query[::-1]
-
-        return query
-
-    async def validate(self, query: str, client_ip: str) -> GuardrailResult:
+    def validate(self, query: str, client_ip: str) -> GuardrailResult:
         nfkd_checks = unicodedata.normalize("NFKD", query)
 
         raw = query

@@ -21,9 +21,9 @@ class GuardrailPipeline:
             PatternGuard(),
         ]
 
-    async def check(self, query: str, client_ip: str) -> GuardrailResult:
+    def check(self, query: str, client_ip: str) -> GuardrailResult:
         for guardrail in self.guardrails:
-            result = await guardrail.validate(query, client_ip)
+            result = guardrail.validate(query, client_ip)
             if not result.passed:
                 logger.warning(
                     "Guardrail '%s' blocked request from %s (len=%d): %s",
