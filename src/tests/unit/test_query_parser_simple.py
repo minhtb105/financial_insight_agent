@@ -1,8 +1,8 @@
-from infrastructure.llm.nlp_parser import QueryParser
+from infrastructure.llm.two_phase_parser import TwoPhaseParser
 
 
 def test_query_parser():
-    parser = QueryParser()
+    parser = TwoPhaseParser()
     test_cases = [
         # 1) PRICE QUERY - 5 questions
         "Lấy giá mở cửa của VCB hôm qua.",

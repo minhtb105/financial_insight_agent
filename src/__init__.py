@@ -26,7 +26,6 @@ from .application import (
 
 from .infrastructure import (
     VNStockClient,
-    QueryParser,
     QueryPreprocessor,
     TwoPhaseParser,
     IntentClassifier,
@@ -63,7 +62,6 @@ __all__ = [
     'handle_portfolio_query',
 
     'VNStockClient',
-    'QueryParser',
     'QueryPreprocessor',
     'TwoPhaseParser',
     'IntentClassifier',

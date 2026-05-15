@@ -324,22 +324,6 @@ class TestTwoPhaseParserRouting:
         assert _INTENT_TO_QUERY_TYPE["sector"] == "sector_query"
 
 
-class TestBackwardCompatQueryParser:
-    def test_queryparser_delegates_to_twophase(self):
-        from infrastructure.llm.nlp_parser import QueryParser
-
-        parser = QueryParser()
-        assert parser._two_phase is not None
-        assert hasattr(parser, "parse")
-        assert hasattr(parser, "parse_with_confidence")
-
-    def test_queryparser_has_preprocessor(self):
-        from infrastructure.llm.nlp_parser import QueryParser
-
-        parser = QueryParser()
-        assert parser.preprocessor is not None
-
-
 class TestExtractorFallbackDicts:
     def test_aggregate_to_dict_minimal(self):
         p = AggregateParams(tickers=[], aggregate="mean")

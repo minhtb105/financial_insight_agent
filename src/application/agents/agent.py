@@ -1,3 +1,4 @@
+import json
 import time
 import uuid
 from dotenv import load_dotenv
@@ -13,6 +14,7 @@ from langchain_core.messages import (
 )
 from langgraph.graph.message import add_messages
 from infrastructure.llm.llm_provider import LLMProvider
+from infrastructure.llm.two_phase_parser import TwoPhaseParser
 from application.agents.tool_registry import ALL_TOOLS
 from infrastructure.resilience.guardrails import (
     get_output_guardrails,
@@ -20,13 +22,15 @@ from infrastructure.resilience.guardrails import (
 from infrastructure.observability import get_logger
 from infrastructure.observability.logging.logger import request_id_var
 
+
 logger = get_logger("agent.StockAgent")
 
 MAX_ITERATIONS = 10
 
 SYSTEM_PROMPT = """Bạn là một agent chứng khoán chuyên nghiệp. Nhiệm vụ của bạn là trả lời câu hỏi của người dùng về cổ phiếu, công ty và dữ liệu tài chính tại thị trường Việt Nam.
 
-Bạn có các công cụ sau để tra cứu thông tin. Hãy sử dụng chúng khi cần thiết:
+Đầu mỗi lượt xử lý, bạn sẽ nhận được [PARSED QUERY] chứa kết quả phân tích từ hệ thống.
+Dựa vào [PARSED QUERY] để quyết định tool cần gọi. Nếu parsed_query có đủ thông tin, hãy gọi tool tương ứng ngay.
 
 CÁC LOẠI TRUY VẤN:
 1. price_query: Lấy dữ liệu OHLCV (open, close, high, low, volume) cho 1+ tickers. Input: tickers (bắt buộc), requested_field, thời gian.
@@ -43,7 +47,7 @@ CÁC LOẠI TRUY VẤN:
 12. sector_query: Phân tích hiệu suất cổ phiếu theo ngành. Input: sector (bắt buộc), metric.
 
 QUY TẮC:
-1. Gọi công cụ phù hợp dựa trên câu hỏi của người dùng.
+1. Gọi công cụ phù hợp dựa trên parsed_query.
 2. Nếu câu hỏi cần nhiều dữ liệu, hãy gọi nhiều công cụ tuần tự.
 3. Sau khi nhận kết quả từ công cụ, tổng hợp thành câu trả lời rõ ràng bằng tiếng Việt.
 4. Dừng lại khi đã có câu trả lời hoàn chỉnh.
@@ -60,6 +64,7 @@ class AgentState(TypedDict):
     validation_error: Optional[str]
     retry_count: int
     iterations: int
+    original_query: str
 
 
 class StockAgent:
@@ -67,11 +72,43 @@ class StockAgent:
         load_dotenv()
 
         self.llm_provider = LLMProvider()
+        self.two_phase_parser = TwoPhaseParser(llm_provider=self.llm_provider)
         self.tools = ALL_TOOLS
         self.tool_node = ToolNode(self.tools)
         self.llm = self.llm_provider.get_tool_calling_llm(self.tools)
 
         graph = StateGraph(AgentState)
+
+        def parser_node(state: AgentState) -> dict:
+            node_logger = get_logger("agent.parser_node")
+            rid = request_id_var.get() or "unknown"
+            request_id_var.set(rid)
+
+            query = state.get("original_query", "")
+            if not query:
+                for m in state.get("messages", []):
+                    if isinstance(m, HumanMessage):
+                        query = m.content or ""
+                        break
+
+            node_logger.info("Parser node processing", extra={
+                "request_id": rid,
+                "query": query[:100],
+            })
+
+            parsed = self.two_phase_parser.parse(query)
+
+            context_msg = SystemMessage(
+                content=(
+                    f"[PARSED QUERY] query_type={parsed.get('query_type', 'unknown')}\n"
+                    f"[PARSED QUERY] params={json.dumps(parsed, ensure_ascii=False)}"
+                )
+            )
+
+            return {
+                "parsed_query": parsed,
+                "messages": [context_msg],
+            }
 
         def agent_node(state: AgentState) -> dict:
             node_logger = get_logger("agent.agent_node")
@@ -130,6 +167,7 @@ class StockAgent:
                 "iterations": iterations + 1,
             }
 
+        graph.add_node("parser", parser_node)
         graph.add_node("agent", agent_node)
         graph.add_node("tools", self.tool_node)
 
@@ -183,7 +221,8 @@ class StockAgent:
                 return "continue"
             return "end"
 
-        graph.set_entry_point("agent")
+        graph.set_entry_point("parser")
+        graph.add_edge("parser", "agent")
         graph.add_conditional_edges(
             "agent",
             should_continue,
@@ -226,6 +265,7 @@ class StockAgent:
             "validation_error": None,
             "retry_count": 0,
             "iterations": 0,
+            "original_query": query,
         }
         final_response = ""
         try:

@@ -1,9 +1,9 @@
-from infrastructure.llm.nlp_parser import QueryParser
+from infrastructure.llm.two_phase_parser import TwoPhaseParser
 
 
 def test_enhanced_parser():
     """Test the enhanced parser with new query types."""
-    parser = QueryParser()
+    parser = TwoPhaseParser()
     
     test_cases = [
         # Original query types
@@ -129,7 +129,7 @@ def test_enhanced_parser():
     results = []
     for i, test_case in enumerate(test_cases):
         try:
-            parsed, confidence = parser.parse_with_confidence(test_case["query"])
+            parsed = parser.parse(test_case["query"])
             success = (
                 parsed.get("query_type") == test_case["expected_type"] and
                 parsed.get("requested_field") == test_case["expected_field"]
@@ -138,7 +138,6 @@ def test_enhanced_parser():
             results.append({
                 "query": test_case["query"],
                 "parsed": parsed,
-                "confidence": confidence,
                 "success": success,
                 "expected_type": test_case["expected_type"],
                 "expected_field": test_case["expected_field"]
@@ -148,17 +147,15 @@ def test_enhanced_parser():
             print(f"[{status}] Case {i+1}: {test_case['query']}")
             print(f"  Expected: type={test_case['expected_type']}, field={test_case['expected_field']}")
             print(f"  Got: type={parsed.get('query_type')}, field={parsed.get('requested_field')}")
-            print(f"  Confidence: {confidence:.2f}")
             
         except Exception as e:
             results.append({
                 "query": test_case["query"],
                 "parsed": None,
-                "confidence": 0.0,
                 "success": False,
                 "expected_type": test_case["expected_type"],
                 "expected_field": test_case["expected_field"],
-                "error": str(e)
+                "error": str(e),
             })
             print(f"[FAIL] Case {i+1}: {test_case['query']}")
             print(f"  Error: {e}")
@@ -197,8 +194,8 @@ def test_enhanced_parser():
             if r.get("error"):
                 print(f"  Error: {r['error']}")
             else:
-                print(f"  Expected: {r['expected_type']}/{r['expected_field']}")
-                print(f"  Got: {r['parsed']['query_type'] if r['parsed'] else 'None'}/{r['parsed']['requested_field'] if r['parsed'] else 'None'}")
+                    print(f"  Expected: {r['expected_type']}/{r['expected_field']}")
+                    print(f"  Got: {(r['parsed'] or {}).get('query_type', 'None')}/{(r['parsed'] or {}).get('requested_field', 'None')}")
 
     return results
 

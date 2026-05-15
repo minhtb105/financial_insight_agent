@@ -1,8 +1,7 @@
-from langsmith import evaluate
-from infrastructure.llm.nlp_parser import QueryParser
+from infrastructure.llm.two_phase_parser import TwoPhaseParser
 
 
-parser = QueryParser()
+parser = TwoPhaseParser()
 
 test_cases = [
     # 1) PRICE QUERY - 20 questions
