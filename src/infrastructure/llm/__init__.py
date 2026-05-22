@@ -1,9 +1,17 @@
-from .query_preprocessor import QueryPreprocessor
-from .two_phase_parser import TwoPhaseParser
-from .intent_classifier import IntentClassifier
-
 __all__ = [
-    'QueryPreprocessor',
-    'TwoPhaseParser',
-    'IntentClassifier',
+    "LLMProvider",
+    "MultiQuery",
 ]
+
+
+def __getattr__(name):
+    import importlib
+
+    _LAZY = {
+        "LLMProvider": ".llm_provider",
+        "MultiQuery": ".llm_provider",
+    }
+    if name in _LAZY:
+        mod = importlib.import_module(_LAZY[name], __package__)
+        return getattr(mod, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

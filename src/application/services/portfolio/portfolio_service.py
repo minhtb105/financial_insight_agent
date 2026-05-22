@@ -1,291 +1,344 @@
-from typing import Dict, Any, List, Optional
-from datetime import datetime
-import json
 import os
+import json
+import threading
+from collections.abc import Callable
+from typing import Any
+from datetime import datetime, timezone
+from pathlib import Path
+from shared.constants import PORTFOLIO_TTL_HOURS
 from infrastructure.cache import get_cache_manager
 from infrastructure.cache.cache_keys import make_cache_key
+from infrastructure.api_clients.vn_stock_client import VNStockClient
+from shared.base_service import BaseService
 
-_PORTFOLIO_TTL_HOURS = 0.25
-_SECTOR_TTL_HOURS = 4
-
-
-def _cache() -> Optional[Any]:
-    return get_cache_manager()
+_PORTFOLIO_SECTOR_CACHE_HOURS = 4
 
 
 class PortfolioManager:
-    def __init__(self, portfolio_file: str = "user_portfolio.json"):
-        self.portfolio_file = portfolio_file
+    _file_lock: threading.Lock = threading.Lock()
+
+    def __init__(self, portfolio_file: str | None = None, user_id: str = "default"):
+        self.user_id = user_id
+        self.portfolio_file = (
+            portfolio_file or os.getenv("PORTFOLIO_FILE") or f"user_portfolio_{user_id}.json"
+        )
         self.portfolio = self.load_portfolio()
 
-    def load_portfolio(self) -> Dict[str, Any]:
-        if os.path.exists(self.portfolio_file):
-            try:
-                with open(self.portfolio_file, 'r') as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, IOError) as e:
-                return {"holdings": {}, "transactions": []}
+    def load_portfolio(self) -> dict[str, Any]:
+        with self._file_lock:
+            if Path(self.portfolio_file).exists():
+                try:
+                    with Path(self.portfolio_file).open() as f:
+                        return json.load(f)
+                except (OSError, json.JSONDecodeError):
+                    return {"holdings": {}, "transactions": []}
+            return {"holdings": {}, "transactions": []}
+
+    def save_portfolio(self):
+        with self._file_lock:
+            path = Path(self.portfolio_file)
+            tmp = path.with_suffix(".tmp")
+            with tmp.open("w") as f:
+                json.dump(self.portfolio, f, indent=2, default=str)
+            tmp.replace(path)
 
     def add_holding(self, ticker: str, quantity: int, price: float):
         if ticker not in self.portfolio["holdings"]:
             self.portfolio["holdings"][ticker] = 0
         self.portfolio["holdings"][ticker] += quantity
 
-        self.portfolio["transactions"].append({
-            "ticker": ticker,
-            "quantity": quantity,
-            "price": price,
-            "date": datetime.now().isoformat(),
-            "type": "buy"
-        })
+        self.portfolio["transactions"].append(
+            {
+                "ticker": ticker,
+                "quantity": quantity,
+                "price": price,
+                "date": datetime.now(timezone.utc).isoformat(),
+                "type": "buy",
+            }
+        )
 
         self.save_portfolio()
 
     def remove_holding(self, ticker: str, quantity: int, price: float):
         if ticker in self.portfolio["holdings"]:
-            self.portfolio["holdings"][ticker] = max(0, self.portfolio["holdings"][ticker] - quantity)
+            self.portfolio["holdings"][ticker] = max(
+                0, self.portfolio["holdings"][ticker] - quantity
+            )
 
-            self.portfolio["transactions"].append({
-                "ticker": ticker,
-                "quantity": quantity,
-                "price": price,
-                "date": datetime.now().isoformat(),
-                "type": "sell"
-            })
+            buy_txns = [
+                t
+                for t in self.portfolio["transactions"]
+                if t["ticker"] == ticker and t["type"] == "buy"
+            ]
+            total_cost = sum(t["quantity"] * t["price"] for t in buy_txns)
+            total_qty = sum(t["quantity"] for t in buy_txns)
+            avg_cost = total_cost / total_qty if total_qty > 0 else 0.0
+            realized_pnl = (price - avg_cost) * quantity
+
+            self.portfolio["transactions"].append(
+                {
+                    "ticker": ticker,
+                    "quantity": quantity,
+                    "price": price,
+                    "realized_pnl": round(realized_pnl, 2),
+                    "date": datetime.now(timezone.utc).isoformat(),
+                    "type": "sell",
+                }
+            )
 
             self.save_portfolio()
 
-    def get_holdings(self) -> Dict[str, int]:
-        return self.portfolio["holdings"]
+    def get_holdings(self) -> dict[str, int]:
+        return dict(self.portfolio["holdings"])
 
-    def get_transactions(self) -> List[Dict]:
+    def get_transactions(self) -> list[dict]:
         return self.portfolio["transactions"]
 
 
-def get_portfolio_value(query: dict) -> Dict[str, Any]:
-    portfolio_manager = PortfolioManager()
-    holdings = portfolio_manager.get_holdings()
+_PORTFOLIO_FIELD_HANDLERS: dict[str, Callable[["PortfolioService"], dict[str, Any]]] = {
+    "portfolio_value": lambda self: self.get_portfolio_value({}),
+    "portfolio_performance": lambda self: self.get_portfolio_performance({}),
+}
 
-    if not holdings:
-        return {"portfolio_value": 0, "holdings": {}}
 
-    try:
-        cache = _cache()
-        from infrastructure.api_clients.vn_stock_client import VNStockClient
-        total_value = 0
-        holding_values = {}
+class PortfolioService(BaseService):
+    def __init__(self):
+        """Khởi tạo PortfolioService."""
+        super().__init__("PortfolioService")
 
-        today_str = datetime.now().strftime("%Y-%m-%d")
+    def _fetch_price(self, ticker: str, quantity: int, today_str: str) -> dict[str, Any]:
+        cache = self._get_cache_manager()
+        try:
+            cache_key = make_cache_key(
+                "portfolio_price", ticker, today_str, today_str, interval="1d"
+            )
+            cached_price = cache.get(cache_key) if cache else None
+            if cached_price is not None:
+                price = cached_price
+            else:
+                client = VNStockClient(ticker=ticker)
+                current_price = client.fetch_trading_data(
+                    start=today_str, end=today_str, interval="1d"
+                )
 
-        for ticker, quantity in holdings.items():
-            if quantity > 0:
-                try:
-                    cache_key = make_cache_key("portfolio_price", ticker, today_str, today_str, interval="1d")
-                    cached_price = cache.get(cache_key) if cache else None
-                    if cached_price is not None:
-                        price = cached_price
-                    else:
-                        client = VNStockClient(ticker=ticker)
-                        current_price = client.fetch_trading_data(
-                            start=today_str,
-                            end=today_str,
-                            interval="1d"
-                        )
+                if current_price is None or current_price.empty:
+                    return {"error": f"No price data for {ticker}"}
+                price = float(current_price["close"].iloc[-1])
+                if cache:
+                    cache.set(cache_key, price, ttl_hours=PORTFOLIO_TTL_HOURS)
 
-                        if current_price is None or current_price.empty:
-                            continue
-                        price = float(current_price["close"].iloc[-1])
-                        if cache:
-                            cache.set(cache_key, price, ttl_hours=_PORTFOLIO_TTL_HOURS)
+            value = price * quantity
+            return {"ticker": ticker, "quantity": quantity, "current_price": price, "value": value}
+        except Exception as e:
+            self.logger.error(f"Error fetching price for {ticker}: {e}")
+            return {"error": str(e)}
 
-                    value = price * quantity
-                    total_value += value
+    def _fetch_sector_and_price(self, ticker: str, quantity: int, today_str: str) -> dict[str, Any]:
+        cache = self._get_cache_manager()
+        try:
+            sector_cache_key = make_cache_key("portfolio_sector", ticker)
+            cached_sector = cache.get(sector_cache_key) if cache else None
+            sector = cached_sector if cached_sector else "Unknown"
+
+            price_cache_key = make_cache_key(
+                "portfolio_price", ticker, today_str, today_str, interval="1d"
+            )
+            cached_price = cache.get(price_cache_key) if cache else None
+            if cached_price is not None:
+                price = cached_price
+            else:
+                client = VNStockClient(ticker=ticker)
+                current_price = client.fetch_trading_data(
+                    start=today_str, end=today_str, interval="1d"
+                )
+                if current_price is None or current_price.empty:
+                    return {"error": f"No price data for {ticker}"}
+                price = float(current_price["close"].iloc[-1])
+                if cache:
+                    cache.set(sector_cache_key, sector, ttl_hours=_PORTFOLIO_SECTOR_CACHE_HOURS)
+                    cache.set(price_cache_key, price, ttl_hours=PORTFOLIO_TTL_HOURS)
+
+            value = price * quantity
+            return {"ticker": ticker, "sector": sector, "value": value}
+        except Exception as e:
+            self.logger.error(f"Error getting allocation for {ticker}: {e}")
+            return {"error": str(e)}
+
+    def get_portfolio_value(self, _query: dict) -> dict[str, Any]:
+        portfolio_manager = PortfolioManager()
+        holdings = portfolio_manager.get_holdings()
+
+        if not holdings:
+            return {"portfolio_value": 0, "holdings": {}}
+
+        try:
+            today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+            def fetch_price(ticker: str) -> dict[str, Any]:
+                return self._fetch_price(ticker, holdings[ticker], today_str)
+
+            results = self.for_each_ticker(list(holdings.keys()), fetch_price)
+            total_value = 0
+            holding_values = {}
+
+            for ticker, result in results.items():
+                if ticker == "error":
+                    continue
+                if isinstance(result, dict) and "error" not in result and result.get("ticker"):
+                    total_value += result["value"]
                     holding_values[ticker] = {
-                        "quantity": quantity,
-                        "current_price": price,
-                        "value": value
+                        "quantity": result["quantity"],
+                        "current_price": result["current_price"],
+                        "value": result["value"],
                     }
-                except Exception as e:
-                    print(f"Error getting price for {ticker}: {e}")
 
-        return {
-            "portfolio_value": total_value,
-            "holdings": holding_values
-        }
+            return {"portfolio_value": total_value, "holdings": holding_values}
 
-    except Exception as e:
-        print(f"Error calculating portfolio value: {e}")
-        return {"error": str(e)}
+        except Exception as e:
+            self.logger.error(f"Error calculating portfolio value: {e}")
+            return {"error": str(e)}
 
+    def get_portfolio_performance(self, query: dict) -> dict[str, Any]:
+        portfolio_manager = PortfolioManager()
+        transactions = portfolio_manager.get_transactions()
 
-def get_portfolio_performance(query: dict) -> Dict[str, Any]:
-    portfolio_manager = PortfolioManager()
-    transactions = portfolio_manager.get_transactions()
+        if not transactions:
+            return {"performance": {}, "total_return": 0}
 
-    if not transactions:
-        return {"performance": {}, "total_return": 0}
+        try:
+            total_cost = 0.0
+            total_proceeds = 0.0
 
-    try:
-        total_invested = 0
-        total_current_value = 0
+            for transaction in transactions:
+                if transaction["type"] == "buy":
+                    total_cost += transaction["quantity"] * transaction["price"]
+                elif transaction["type"] == "sell":
+                    total_proceeds += transaction["quantity"] * transaction["price"]
 
-        for transaction in transactions:
-            if transaction["type"] == "buy":
-                total_invested += transaction["quantity"] * transaction["price"]
-            elif transaction["type"] == "sell":
-                # Track realized proceeds or reduce cost basis
-                total_invested -= transaction["quantity"] * transaction["price"]
+            portfolio_value = self.get_portfolio_value(query)
+            total_current_value = portfolio_value.get("portfolio_value", 0)
 
-        portfolio_value = get_portfolio_value(query)
-        if "portfolio_value" in portfolio_value:
-            total_current_value = portfolio_value["portfolio_value"]
+            total_return = total_current_value + total_proceeds - total_cost
+            return_rate = (total_return / total_cost * 100) if total_cost > 0 else 0.0
 
-        total_return = total_current_value - total_invested
-        return_rate = (total_return / total_invested * 100) if total_invested > 0 else 0
+            return {
+                "total_cost": total_cost,
+                "total_proceeds": total_proceeds,
+                "current_value": total_current_value,
+                "total_return": total_return,
+                "return_rate": return_rate,
+            }
 
-        return {
-            "total_invested": total_invested,
-            "current_value": total_current_value,
-            "total_return": total_return,
-            "return_rate": return_rate
-        }
+        except Exception as e:
+            self.logger.error(f"Error calculating portfolio performance: {e}")
+            return {"error": str(e)}
 
-    except Exception as e:
-        print(f"Error calculating portfolio performance: {e}")
-        return {"error": str(e)}
+    def get_portfolio_allocation(self, _query: dict) -> dict[str, Any]:
+        portfolio_manager = PortfolioManager()
+        holdings = portfolio_manager.get_holdings()
 
+        if not holdings:
+            return {"allocation": {}, "diversification_score": 0}
 
-def get_portfolio_allocation(query: dict) -> Dict[str, Any]:
-    portfolio_manager = PortfolioManager()
-    holdings = portfolio_manager.get_holdings()
+        try:
+            today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    if not holdings:
-        return {"allocation": {}, "diversification_score": 0}
+            def fetch_sector_and_price(ticker: str) -> dict[str, Any]:
+                return self._fetch_sector_and_price(ticker, holdings[ticker], today_str)
 
-    try:
-        cache = _cache()
-        from infrastructure.api_clients.vn_stock_client import VNStockClient
-        allocation = {}
-        total_value = 0
-        today_str = datetime.now().strftime("%Y-%m-%d")
+            results = self.for_each_ticker(list(holdings.keys()), fetch_sector_and_price)
+            allocation = {}
+            total_value = 0
 
-        for ticker, quantity in holdings.items():
-            if quantity > 0:
-                try:
-                    sector_cache_key = make_cache_key("portfolio_sector", ticker)
-                    cached_sector = cache.get(sector_cache_key) if cache else None
-                    if cached_sector is not None:
-                        sector = cached_sector
-                    else:
-                        client = VNStockClient(ticker=ticker)
-                        company_info = client.company.overview()
-                        sector = "Unknown"
-                        if company_info is not None and not company_info.empty:
-                            if "sector" in company_info.columns and len(company_info) > 0:
-                                sector = company_info["sector"].iloc[0]
-                            else:
-                                sector = "Unknown"
-                        if cache:
-                            cache.set(sector_cache_key, sector, ttl_hours=_SECTOR_TTL_HOURS)
-
-                    price_cache_key = make_cache_key("portfolio_allocation_price", ticker, today_str, today_str, interval="1d")
-                    cached_price = cache.get(price_cache_key) if cache else None
-                    if cached_price is not None:
-                        price = cached_price
-                    else:
-                        client = VNStockClient(ticker=ticker)
-                        current_price = client.fetch_trading_data(
-                            start=today_str,
-                            end=today_str,
-                            interval="1d"
-                        )
-                        if current_price is None or current_price.empty:
-                            continue
-                        price = float(current_price["close"].iloc[-1])
-                        if cache:
-                            cache.set(price_cache_key, price, ttl_hours=_PORTFOLIO_TTL_HOURS)
-
-                    value = price * quantity
+            for ticker, result in results.items():
+                if ticker == "error":
+                    continue
+                if isinstance(result, dict) and "error" not in result and result.get("ticker"):
+                    sector = result["sector"]
+                    value = result["value"]
                     total_value += value
-
                     if sector not in allocation:
                         allocation[sector] = 0
                     allocation[sector] += value
 
-                except Exception as e:
-                    print(f"Error getting allocation for {ticker}: {e}")
+            if total_value > 0:
+                for sector, val in list(allocation.items()):
+                    allocation[sector] = {
+                        "value": val,
+                        "percentage": (val / total_value) * 100,
+                    }
 
-        if total_value > 0:
-            for sector in allocation:
-                allocation[sector] = {
-                    "value": allocation[sector],
-                    "percentage": (allocation[sector] / total_value) * 100
-                }
+            num_sectors = len(allocation)
+            if num_sectors == 0:
+                diversification_score = 0
+            elif num_sectors == 1:
+                diversification_score = 20
+            elif num_sectors == 2:
+                diversification_score = 50
+            elif num_sectors == 3:
+                diversification_score = 70
+            elif num_sectors == 4:
+                diversification_score = 85
+            else:
+                diversification_score = 100
 
-        num_sectors = len(allocation)
-        if num_sectors == 0:
-            diversification_score = 0
-        elif num_sectors == 1:
-            diversification_score = 20
-        elif num_sectors == 2:
-            diversification_score = 50
-        elif num_sectors == 3:
-            diversification_score = 70
-        elif num_sectors == 4:
-            diversification_score = 85
-        else:
-            diversification_score = 100
+            return {
+                "allocation": allocation,
+                "diversification_score": diversification_score,
+                "total_value": total_value,
+            }
 
-        return {
-            "allocation": allocation,
-            "diversification_score": diversification_score,
-            "total_value": total_value
-        }
+        except Exception as e:
+            self.logger.error(f"Error calculating portfolio allocation: {e}")
+            return {"error": str(e)}
 
-    except Exception as e:
-        print(f"Error calculating portfolio allocation: {e}")
-        return {"error": str(e)}
+    def _update_portfolio_data(self, portfolio_data: dict[str, int]) -> None:
+        portfolio_manager = PortfolioManager()
+        for ticker, quantity in portfolio_data.items():
+            if quantity <= 0:
+                continue
+            portfolio_manager.add_holding(ticker=ticker, quantity=quantity, price=0.0)
+
+    def handle_query(
+        self,
+        requested_field: str,
+        portfolio: dict[str, int] | None = None,
+    ) -> dict[str, Any]:
+        if portfolio:
+            self._update_portfolio_data(portfolio)
+
+        try:
+            handler = _PORTFOLIO_FIELD_HANDLERS.get(requested_field)
+            if handler is not None:
+                return handler(self)
+            if requested_field in ("portfolio_summary", "portfolio_allocation"):
+                result: dict[str, Any] = {}
+                portfolio_value = self.get_portfolio_value({})
+                if portfolio_value and "error" not in portfolio_value:
+                    result["portfolio_value"] = portfolio_value
+
+                portfolio_performance = self.get_portfolio_performance({})
+                if portfolio_performance and "error" not in portfolio_performance:
+                    result["portfolio_performance"] = portfolio_performance
+
+                portfolio_allocation = self.get_portfolio_allocation({})
+                if portfolio_allocation and "error" not in portfolio_allocation:
+                    result["portfolio_allocation"] = portfolio_allocation
+
+                return result if result else {"error": "No portfolio data found"}
+
+            return {"error": f"Unknown requested_field: {requested_field}"}
+
+        except Exception as e:
+            return {"error": str(e)}
 
 
-def handle_portfolio_query(parsed: Dict[str, Any]):
-    requested_field = parsed.get("requested_field")
-    portfolio_data = parsed.get("portfolio")
+_portfolio_service = PortfolioService()
 
-    try:
-        if portfolio_data:
-            portfolio_manager = PortfolioManager()
-            current_holdings = portfolio_manager.get_holdings()
 
-            for ticker, quantity in portfolio_data.items():
-                if ticker not in current_holdings:
-                    current_holdings[ticker] = 0
-                current_holdings[ticker] += quantity
-
-            portfolio_manager.portfolio["holdings"] = current_holdings
-            portfolio_manager.save_portfolio()
-
-        if requested_field == "portfolio_value":
-            return get_portfolio_value(parsed)
-        elif requested_field == "portfolio_performance":
-            return get_portfolio_performance(parsed)
-        elif requested_field == "portfolio_allocation":
-            portfolio_value = get_portfolio_value(parsed)
-            if portfolio_value and "error" not in portfolio_value:
-                result["portfolio_value"] = portfolio_value
-
-            portfolio_performance = get_portfolio_performance(parsed)
-            if portfolio_performance and "error" not in portfolio_performance:
-                result["portfolio_performance"] = portfolio_performance
-
-            portfolio_allocation = get_portfolio_allocation(parsed)
-            if portfolio_allocation and "error" not in portfolio_allocation:
-                result["portfolio_allocation"] = portfolio_allocation
-
-            portfolio_allocation = get_portfolio_allocation(parsed)
-            if portfolio_allocation:
-                result["portfolio_allocation"] = portfolio_allocation
-
-            return result if result else {"error": "No portfolio data found"}
-
-    except Exception as e:
-        return {"error": str(e)}
+def handle_portfolio_query(
+    field: str = "portfolio_summary",
+    portfolio: dict[str, int] | None = None,
+) -> dict[str, Any]:
+    """Manage portfolio: get value, performance, or sector allocation."""
+    return _portfolio_service.handle_query(requested_field=field, portfolio=portfolio)

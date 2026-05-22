@@ -7,5 +7,5 @@ This module contains the CLI interface components for the financial insight agen
 from .console import ConsoleApp
 
 __all__ = [
-    'ConsoleApp',
+    "ConsoleApp",
 ]

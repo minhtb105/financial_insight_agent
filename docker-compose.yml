@@ -1,0 +1,60 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: talenthub-ai-app
+    ports:
+      - "${APP_EXTERNAL_PORT:-8000}:${APP_PORT:-8000}"
+    env_file:
+      - .env
+    environment:
+      - APP_PORT=${APP_PORT:-8000}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+      - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      - QDRANT_HOST=${QDRANT_HOST:-qdrant}
+      - QDRANT_PORT=${QDRANT_PORT:-6333}
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      - QDRANT_CANDIDATES_COLLECTION=${QDRANT_CANDIDATES_COLLECTION:-talenthub_candidates}
+      - QDRANT_JOBS_COLLECTION=${QDRANT_JOBS_COLLECTION:-talenthub_jobs}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      qdrant:
+        condition: service_started
+    networks:
+      - talenthub-network
+    restart: unless-stopped
+    command: uvicorn api.app:app --host 0.0.0.0 --port ${APP_PORT:-8000} --workers 4
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${APP_PORT:-8000}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: talenthub-ai-qdrant
+    ports:
+      - "${QDRANT_EXTERNAL_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    networks:
+      - talenthub-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+networks:
+  talenthub-network:
+    driver: bridge
+
+volumes:
+  qdrant_storage:

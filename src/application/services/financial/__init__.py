@@ -3,7 +3,7 @@ from .aggregate_service import handle_aggregate_query
 from .ranking_service import handle_ranking_query
 
 __all__ = [
-    'handle_financial_ratio_query',
-    'handle_aggregate_query',
-    'handle_ranking_query',
+    "handle_aggregate_query",
+    "handle_financial_ratio_query",
+    "handle_ranking_query",
 ]

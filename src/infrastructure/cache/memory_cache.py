@@ -4,29 +4,25 @@ In-memory caching implementation for the financial insight agent.
 Provides fast, local caching with LRU eviction and TTL management.
 """
 
-import json
+import atexit
 import logging
 import threading
 import time
-from typing import Any, Optional, Dict, List
+from typing import Any
 from collections import OrderedDict
-
 
 logger = logging.getLogger(__name__)
 
 
 class MemoryCache:
     """In-memory cache implementation with LRU eviction and TTL."""
-    
+
     def __init__(
-        self,
-        max_size: int = 1000,
-        default_ttl_hours: int = 1,
-        cleanup_interval_minutes: int = 10
+        self, max_size: int = 1000, default_ttl_hours: int = 1, cleanup_interval_minutes: int = 10
     ):
         """
         Initialize in-memory cache.
-        
+
         Args:
             max_size: Maximum number of items to store
             default_ttl_hours: Default TTL in hours
@@ -35,55 +31,50 @@ class MemoryCache:
         self.max_size = max_size
         self.default_ttl_hours = default_ttl_hours
         self.cleanup_interval = cleanup_interval_minutes * 60  # Convert to seconds
-        
+
         # Thread-safe storage
-        self._cache: Dict[str, Dict[str, Any]] = {}
+        self._cache: dict[str, dict[str, Any]] = {}
         self._access_order: OrderedDict[str, float] = OrderedDict()
         self._lock = threading.RLock()
-        
+
         # Cleanup thread with stop event for graceful shutdown
         self._stop_event = threading.Event()
         self._cleanup_thread = threading.Thread(target=self._cleanup_expired, daemon=True)
         self._cleanup_thread.start()
-        
-        logger.info(f"Initialized MemoryCache with max_size={max_size}, default_ttl={default_ttl_hours}h")
-    
-    def _serialize(self, data: Any) -> str:
-        """Serialize data to JSON string."""
-        try:
-            return json.dumps(data, ensure_ascii=False, default=str)
-        except (TypeError, ValueError) as e:
-            logger.error(f"Failed to serialize data: {e}")
-            return json.dumps({"error": "Serialization failed", "data": str(data)})
-    
-    def _deserialize(self, data: str) -> Any:
-        """Deserialize JSON string to Python object."""
-        try:
-            return json.loads(data)
-        except (json.JSONDecodeError, TypeError) as e:
-            logger.error(f"Failed to deserialize data: {e}")
-            return None
-    
+
+        atexit.register(self.close)
+
+        logger.info(
+            f"Initialized MemoryCache with max_size={max_size}, default_ttl={default_ttl_hours}h"
+        )
+
     def _get_key(self, key: str, namespace: str = "cache") -> str:
         """Generate full cache key with namespace."""
         return f"{namespace}:{key}"
-    
-    def _is_expired(self, item: Dict[str, Any]) -> bool:
+
+    def _is_expired(self, item: dict[str, Any]) -> bool:
         """Check if cache item is expired."""
         if "expires_at" not in item:
             return False
         return time.time() > item["expires_at"]
-    
+
     def _evict_lru(self) -> None:
         """Evict least recently used items if cache is full."""
         with self._lock:
-            while len(self._cache) >= self.max_size and self._access_order:
-                # Remove oldest item (first in OrderedDict)
-                oldest_key = next(iter(self._access_order))
-                self._access_order.pop(oldest_key)
-                self._cache.pop(oldest_key, None)
-                logger.debug(f"Evicted LRU item: {oldest_key}")
-    
+            excess = len(self._cache) - self.max_size + 1
+            if excess <= 0:
+                return
+            keys_to_evict = []
+            for _ in range(min(excess, self.max_size // 5)):
+                if not self._access_order:
+                    break
+                keys_to_evict.append(next(iter(self._access_order)))
+            for k in keys_to_evict:
+                self._access_order.pop(k, None)
+                self._cache.pop(k, None)
+            if keys_to_evict:
+                logger.debug("Evicted %d LRU items", len(keys_to_evict))
+
     def _cleanup_expired(self) -> None:
         """Background cleanup of expired items."""
         while not self._stop_event.is_set():
@@ -93,234 +84,148 @@ class MemoryCache:
                     break
                 self._cleanup_expired_items()
             except Exception as e:
-                logger.error(f"Error in cleanup thread: {e}")
-    
+                logger.error("Error in cleanup thread: %s", e)
+
     def _cleanup_expired_items(self) -> None:
         """Remove expired items from cache."""
         with self._lock:
-            current_time = time.time()
-            expired_keys = []
-            
-            for key, item in self._cache.items():
-                if self._is_expired(item):
-                    expired_keys.append(key)
-            
+            expired_keys = [key for key in self._cache if self._is_expired(self._cache[key])]
+
             for key in expired_keys:
                 self._cache.pop(key, None)
                 self._access_order.pop(key, None)
-            
+
             if expired_keys:
-                logger.debug(f"Cleaned up {len(expired_keys)} expired items")
-    
-    def get(self, key: str, namespace: str = "cache") -> Optional[Any]:
+                logger.debug("Cleaned up %d expired items", len(expired_keys))
+
+    def get(self, key: str, namespace: str = "cache") -> Any | None:
         """
         Get value from cache.
-        
+
         Args:
             key: Cache key
             namespace: Cache namespace
-            
+
         Returns:
             Cached value or None if not found/expired
         """
         full_key = self._get_key(key, namespace)
-        
+
         with self._lock:
             item = self._cache.get(full_key)
-            
+
             if item is None:
                 return None
-            
+
             if self._is_expired(item):
                 # Remove expired item
                 self._cache.pop(full_key, None)
                 self._access_order.pop(full_key, None)
                 return None
-            
+
             # Update access order (move to end)
             self._access_order.move_to_end(full_key, last=True)
-            
-            return self._deserialize(item["value"])
-    
+
+            return item["value"]
+
     def set(
-        self, 
-        key: str, 
-        value: Any, 
-        ttl_hours: Optional[int] = None,
-        namespace: str = "cache"
+        self, key: str, value: Any, ttl_hours: int | None = None, namespace: str = "cache"
     ) -> bool:
         """
         Set value in cache.
-        
+
         Args:
             key: Cache key
             value: Value to cache
             ttl_hours: TTL in hours (uses default if None)
             namespace: Cache namespace
-            
+
         Returns:
             True if successful, False otherwise
         """
         full_key = self._get_key(key, namespace)
         ttl_hours = ttl_hours or self.default_ttl_hours
-        
+
         with self._lock:
             # Evict LRU items if needed
             self._evict_lru()
-            
+
             # Store item
             item = {
-                "value": self._serialize(value),
+                "value": value,
                 "created_at": time.time(),
                 "expires_at": time.time() + (ttl_hours * 3600),
-                "ttl_hours": ttl_hours
+                "ttl_hours": ttl_hours,
             }
-            
+
             self._cache[full_key] = item
             self._access_order[full_key] = time.time()
-            
-            logger.debug(f"Cached key {key} with TTL {ttl_hours}h")
+
+            logger.debug("Cached key %s with TTL %sh", key, ttl_hours)
             return True
-    
+
     def delete(self, key: str, namespace: str = "cache") -> bool:
         """
         Delete key from cache.
-        
+
         Args:
             key: Cache key
             namespace: Cache namespace
-            
+
         Returns:
             True if successful, False otherwise
         """
         full_key = self._get_key(key, namespace)
-        
+
         with self._lock:
             removed = self._cache.pop(full_key, None) is not None
             self._access_order.pop(full_key, None)
-            
+
             if removed:
-                logger.debug(f"Deleted key: {key}")
-            
+                logger.debug("Deleted key: %s", key)
+
             return removed
-    
+
     def exists(self, key: str, namespace: str = "cache") -> bool:
         """
         Check if key exists in cache.
-        
+
         Args:
             key: Cache key
             namespace: Cache namespace
-            
+
         Returns:
             True if key exists and not expired, False otherwise
         """
         full_key = self._get_key(key, namespace)
-        
+
         with self._lock:
             item = self._cache.get(full_key)
-            
+
             if item is None:
                 return False
-            
+
             if self._is_expired(item):
                 self._cache.pop(full_key, None)
                 self._access_order.pop(full_key, None)
                 return False
-            
+
             return True
-    
-    def keys(self, pattern: str = "*", namespace: str = "cache") -> List[str]:
-        """
-        Get all keys matching pattern.
-        
-        Args:
-            pattern: Key pattern (supports simple glob patterns)
-            namespace: Cache namespace
-            
-        Returns:
-            List of matching keys
-        """
-        with self._lock:
-            if pattern == "*":
-                # Fast path for wildcard
-                return [key.replace(f"{namespace}:", "") for key in self._cache.keys() if key.startswith(f"{namespace}:")]
-            
-            # Pattern matching
-            import fnmatch
-            matching_keys = []
-            
-            for key in self._cache.keys():
-                if key.startswith(f"{namespace}:") and fnmatch.fnmatch(key, f"{namespace}:{pattern}"):
-                    matching_keys.append(key.replace(f"{namespace}:", ""))
-            
-            return matching_keys
-    
-    def ttl(self, key: str, namespace: str = "cache") -> Optional[int]:
-        """
-        Get TTL for key in seconds.
-        
-        Args:
-            key: Cache key
-            namespace: Cache namespace
-            
-        Returns:
-            TTL in seconds, or None if key doesn't exist or has no TTL
-        """
-        full_key = self._get_key(key, namespace)
-        
-        with self._lock:
-            item = self._cache.get(full_key)
-            
-            if item is None:
-                return None
-            
-            if "expires_at" not in item:
-                return None
-            
-            remaining = item["expires_at"] - time.time()
-            return max(0, int(remaining))
-    
-    def expire(self, key: str, ttl_hours: int, namespace: str = "cache") -> bool:
-        """
-        Set TTL for existing key.
-        
-        Args:
-            key: Cache key
-            ttl_hours: TTL in hours
-            namespace: Cache namespace
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        full_key = self._get_key(key, namespace)
-        
-        with self._lock:
-            item = self._cache.get(full_key)
-            
-            if item is None:
-                return False
-            
-            item["expires_at"] = time.time() + (ttl_hours * 3600)
-            item["ttl_hours"] = ttl_hours
-            
-            logger.debug(f"Updated TTL for key {key} to {ttl_hours}h")
-            return True
-    
-    def flush(self, namespace: Optional[str] = None) -> bool:
+
+    def flush(self, namespace: str | None = None) -> bool:
         """
         Flush cache.
-        
+
         Args:
             namespace: If provided, only flush keys in this namespace
-            
+
         Returns:
             True if successful, False otherwise
         """
         with self._lock:
             if namespace:
                 # Remove keys in specific namespace
-                keys_to_remove = [key for key in self._cache.keys() if key.startswith(f"{namespace}:")]
+                keys_to_remove = [key for key in self._cache if key.startswith(f"{namespace}:")]
                 for key in keys_to_remove:
                     self._cache.pop(key, None)
                     self._access_order.pop(key, None)
@@ -328,28 +233,27 @@ class MemoryCache:
                 # Clear all
                 self._cache.clear()
                 self._access_order.clear()
-            
-            logger.info(f"Flushed cache namespace: {namespace or 'all'}")
+
+            logger.info("Flushed cache namespace: %s", namespace or "all")
             return True
-    
-    def info(self) -> Dict[str, Any]:
+
+    def info(self) -> dict[str, Any]:
         """
         Get cache statistics.
-        
+
         Returns:
             Dictionary with cache stats
         """
         with self._lock:
-            current_time = time.time()
             active_items = 0
             expired_items = 0
-            
+
             for item in self._cache.values():
                 if self._is_expired(item):
                     expired_items += 1
                 else:
                     active_items += 1
-            
+
             return {
                 "cache_type": "memory",
                 "max_size": self.max_size,
@@ -358,53 +262,53 @@ class MemoryCache:
                 "expired_items": expired_items,
                 "default_ttl_hours": self.default_ttl_hours,
                 "cleanup_interval_minutes": self.cleanup_interval // 60,
-                "memory_usage_mb": self._estimate_memory_usage()
+                "memory_usage_mb": self._estimate_memory_usage(),
             }
-    
+
     def _estimate_memory_usage(self) -> float:
-        """Estimate memory usage in MB."""
+        """Estimate memory usage in MB by recursively measuring nested objects."""
+        import sys
+
+        def _deep_size(obj: Any, seen: set | None = None) -> int:
+            if seen is None:
+                seen = set()
+            obj_id = id(obj)
+            if obj_id in seen:
+                return 0
+            seen.add(obj_id)
+            size = sys.getsizeof(obj)
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    size += _deep_size(k, seen) + _deep_size(v, seen)
+            elif isinstance(obj, (list, tuple, set, frozenset)):
+                for item in obj:
+                    size += _deep_size(item, seen)
+            return size
+
         try:
-            import sys
-            total_size = 0
-            for item in self._cache.values():
-                total_size += sys.getsizeof(item["value"])
+            total_size = sum(_deep_size(item) for item in self._cache.values())
             return round(total_size / (1024 * 1024), 2)
-        except ImportError:
+        except Exception:
             return 0.0
-    
+
     def close(self) -> None:
-        """Close cache (cleanup resources) with graceful thread shutdown."""
+        """Close cache with graceful thread shutdown."""
         self._stop_event.set()
-        if self._cleanup_thread.is_alive():
+        if self._cleanup_thread.is_alive() and self._cleanup_thread is not threading.current_thread():
             self._cleanup_thread.join(timeout=5)
         with self._lock:
             self._cache.clear()
             self._access_order.clear()
         logger.info("Memory cache closed")
 
+    def __del__(self) -> None:
+        """Fallback cleanup if close() wasn't called explicitly."""
+        self._stop_event.set()
 
-# Global cache instance
-_memory_cache_instance: Optional[MemoryCache] = None
 
-
-def get_memory_cache() -> Optional[MemoryCache]:
-    """Get global memory cache instance — prefer Dependencies container."""
+def get_memory_cache() -> MemoryCache | None:
+    """Get memory cache instance from Dependencies container."""
     from infrastructure.dependencies import get_deps
+
     deps = get_deps()
-    if deps is not None and deps.memory_cache is not None:
-        return deps.memory_cache
-
-    global _memory_cache_instance
-    if _memory_cache_instance is None:
-        try:
-            _memory_cache_instance = MemoryCache()
-        except Exception as e:
-            logger.error(f"Failed to create memory cache instance: {e}")
-            _memory_cache_instance = None
-    return _memory_cache_instance
-
-
-def set_memory_cache_instance(cache: MemoryCache) -> None:
-    """Set global memory cache instance (for testing)."""
-    global _memory_cache_instance
-    _memory_cache_instance = cache
+    return deps.memory_cache if deps is not None else None

@@ -33,3 +33,4 @@ src/financial_insight_agent.egg-info/
 .langgraph_api/
 .claude/
 .kilo/
+.opencode/

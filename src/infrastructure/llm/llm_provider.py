@@ -1,27 +1,151 @@
-import logging
 import os
 import time
-from typing import List, Optional
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from langchain_openai import ChatOpenAI
 from langchain_groq import ChatGroq
-from langchain_core.language_models import BaseChatModel
 
 from infrastructure.observability import get_logger
 from infrastructure.observability.logging.logger import request_id_var
-from infrastructure.resilience.circuit_breaker import LLMUnavailableError, CircuitBreaker
+from infrastructure.resilience.circuit_breaker import LLMUnavailableError, create_circuit_breaker
+
+_RETRYABLE_ERRORS = frozenset({
+    "RateLimitError",
+    "InternalServerError",
+    "ServiceUnavailableError",
+    "APITimeoutError",
+    "APIConnectionError",
+})
+
+_AUTH_ERRORS = frozenset({
+    "AuthenticationError",
+    "PermissionDeniedError",
+    "ForbiddenError",
+})
 
 logger = get_logger("llm_provider")
 
+_OPENAI_KNOWN_KWARGS = {
+    "temperature",
+    "max_tokens",
+    "top_p",
+    "frequency_penalty",
+    "presence_penalty",
+    "stop",
+    "n",
+    "stream",
+    "model",
+    "response_format",
+    "seed",
+    "tools",
+    "tool_choice",
+}
+
+_GROQ_KNOWN_KWARGS = {
+    "temperature",
+    "max_tokens",
+    "top_p",
+    "stop",
+    "stream",
+    "model",
+}
+
 
 class MultiQuery(BaseModel):
-    queries: List[str]
+    queries: list[str]
+
+
+class LLMChain:
+    def __init__(self, primary, fallback, openai_cb, groq_cb, label: str):
+        self._primary = primary
+        self._fallback = fallback
+        self._openai_cb = openai_cb
+        self._groq_cb = groq_cb
+        self._label = label
+        self._openai_kwarg_keys = _OPENAI_KNOWN_KWARGS
+        self._groq_kwarg_keys = _GROQ_KNOWN_KWARGS
+
+    @staticmethod
+    def _filter_kwargs(kwargs, allowed_keys):
+        return {k: v for k, v in kwargs.items() if k in allowed_keys}
+
+    @staticmethod
+    def _classify_error(error: Exception) -> str:
+        error_type = type(error).__name__
+        if error_type in _RETRYABLE_ERRORS:
+            return "retryable"
+        if error_type in _AUTH_ERRORS:
+            return "auth"
+        return "unknown"
+
+    def _try_provider(self, provider_name: str, llm, cb, messages, kwargs, rid: str):
+        """Try a single provider. Returns (result, error) tuple."""
+        try:
+            start = time.time()
+            result = llm.invoke(messages, **kwargs)
+            cb.record_success()
+            logger.info(
+                "%s %s LLM call succeeded", provider_name.title(), self._label,
+                extra={
+                    "request_id": rid,
+                    "provider": provider_name,
+                    "duration_ms": round((time.time() - start) * 1000, 2),
+                },
+            )
+            return result, None
+        except Exception as e:
+            error_type = type(e).__name__
+            category = self._classify_error(e)
+
+            log_extra = {
+                "request_id": rid,
+                "provider": provider_name,
+                "error_type": error_type,
+                "error_category": category,
+                "error": str(e),
+            }
+
+            if category == "retryable":
+                logger.warning("%s retryable error", provider_name.title(), extra=log_extra)
+            elif category == "auth":
+                logger.error("%s auth error", provider_name.title(), extra=log_extra)
+                cb.record_failure()
+            else:
+                logger.warning("%s LLM failed", provider_name.title(), extra=log_extra)
+                cb.record_failure()
+
+            return None, e
+
+    def invoke(self, messages, **kwargs):
+        rid = request_id_var.get() or "unknown"
+        last_error = None
+
+        openai_kwargs = self._filter_kwargs(kwargs, self._openai_kwarg_keys)
+        groq_kwargs = self._filter_kwargs(kwargs, self._groq_kwarg_keys)
+
+        if self._primary and self._openai_cb.acquire_permit():
+            result, err = self._try_provider("openai", self._primary, self._openai_cb, messages, openai_kwargs, rid)
+            if err is None:
+                return result
+            last_error = err
+
+        if self._fallback and self._groq_cb.acquire_permit():
+            result, err = self._try_provider("groq", self._fallback, self._groq_cb, messages, groq_kwargs, rid)
+            if err is None:
+                return result
+            last_error = err
+
+        if last_error:
+            raise last_error
+        raise LLMUnavailableError(
+            "No LLM providers available: both OpenAI and Groq are unreachable"
+        )
 
 
 class LLMProvider:
     def __init__(self):
         load_dotenv()
+        self._chain_cache: dict[str, "LLMChain"] = {}
 
         openai_api_key = os.getenv("OPENAI_API_KEY")
         groq_api_key = os.getenv("GROQ_API_KEY")
@@ -48,81 +172,38 @@ class LLMProvider:
             logger.warning("GROQ_API_KEY not set — fallback LLM (Groq) disabled")
             self._fallback = None
 
-        self._circuit_breaker = CircuitBreaker(
-            name="llm_provider",
-            failure_threshold=3,
-            recovery_timeout=60,
-            half_open_max_requests=1,
-        )
+        self._openai_cb = create_circuit_breaker(name="llm_openai")
+        self._groq_cb = create_circuit_breaker(name="llm_groq")
 
-    def invoke_with_fallback(self, messages, model_kwargs: Optional[dict] = None):
+    def invoke_with_fallback(self, messages, model_kwargs: dict | None = None):
+        """Invoke LLM with automatic primary → fallback chain.
+
+        Delegates to LLMChain to avoid duplicating the retry logic.
+        """
         model_kwargs = model_kwargs or {}
-        rid = request_id_var.get() or "unknown"
 
         if self._primary is None and self._fallback is None:
             raise LLMUnavailableError(
                 "No LLM providers available: both OPENAI_API_KEY and GROQ_API_KEY are missing"
             )
 
-        if not self._circuit_breaker.can_execute():
-            provider_status = {"circuit_breaker": "open", "state": self._circuit_breaker.state.value}
-            raise LLMUnavailableError(
-                "Circuit breaker is open — LLM calls temporarily suspended",
-                provider_status=provider_status,
-            )
+        chain = self._make_chain(self._primary, self._fallback, "invoke")
+        return chain.invoke(messages, **model_kwargs)
 
-        last_error = None
-
-        if self._primary:
-            try:
-                start = time.time()
-                result = self._primary.invoke(messages, **model_kwargs)
-                self._circuit_breaker.record_success()
-                logger.info("Primary LLM call succeeded", extra={
-                    "request_id": rid,
-                    "provider": "openai",
-                    "model": "gpt-4o-mini",
-                    "duration_ms": round((time.time() - start) * 1000, 2),
-                })
-                return result
-            except Exception as e:
-                last_error = e
-                self._circuit_breaker.record_failure()
-                logger.warning("Primary LLM failed, falling back to Groq", extra={
-                    "request_id": rid,
-                    "provider": "openai",
-                    "error_type": type(e).__name__,
-                    "error": str(e),
-                })
-
-        if self._fallback and self._circuit_breaker.can_execute():
-            try:
-                start = time.time()
-                result = self._fallback.invoke(messages, **model_kwargs)
-                self._circuit_breaker.record_success()
-                logger.info("Fallback LLM call completed", extra={
-                    "request_id": rid,
-                    "provider": "groq",
-                    "model": "llama-3.1-8b-instant",
-                    "duration_ms": round((time.time() - start) * 1000, 2),
-                })
-                return result
-            except Exception as e:
-                last_error = e
-                self._circuit_breaker.record_failure()
-                logger.error("Fallback LLM also failed", extra={
-                    "request_id": rid,
-                    "provider": "groq",
-                    "error_type": type(e).__name__,
-                    "error": str(e),
-                })
-
-        if last_error:
-            raise last_error
-
-        raise LLMUnavailableError(
-            "No LLM providers available: both OpenAI and Groq are unreachable"
+    def _make_chain(self, primary, fallback, label) -> "LLMChain":
+        cache_key = f"{label}:{id(primary)}:{id(fallback)}"
+        cached = self._chain_cache.get(cache_key)
+        if cached:
+            return cached
+        chain = LLMChain(
+            primary=primary,
+            fallback=fallback,
+            openai_cb=self._openai_cb,
+            groq_cb=self._groq_cb,
+            label=label,
         )
+        self._chain_cache[cache_key] = chain
+        return chain
 
     def with_structured_output(
         self,
@@ -135,13 +216,16 @@ class LLMProvider:
                 "No LLM providers available: both OPENAI_API_KEY and GROQ_API_KEY are missing"
             )
 
-        primary = None
-        if self._primary:
-            primary = self._primary.with_structured_output(pydantic_object, method=method)
-
-        fallback_llm = None
-        if self._fallback:
-            fallback_llm = self._fallback.with_structured_output(pydantic_object, method=method)
+        primary = (
+            self._primary.with_structured_output(pydantic_object, method=method)
+            if self._primary
+            else None
+        )
+        fallback_llm = (
+            self._fallback.with_structured_output(pydantic_object, method=method)
+            if self._fallback
+            else None
+        )
 
         if not fallback or primary is None:
             if fallback_llm:
@@ -152,83 +236,9 @@ class LLMProvider:
                 "No LLM providers available: both OPENAI_API_KEY and GROQ_API_KEY are missing"
             )
 
-        circuit_breaker = self._circuit_breaker
+        return self._make_chain(primary, fallback_llm, "structured")
 
-        class FallbackChain:
-            def __init__(self, primary, fallback, rid: str, cb):
-                self._primary = primary
-                self._fallback = fallback
-                self._rid = rid
-                self._cb = cb
-
-            def invoke(self, messages, **kwargs):
-                rid = self._rid or request_id_var.get() or "unknown"
-                last_error = None
-
-                if not self._cb.can_execute():
-                    raise LLMUnavailableError(
-                        "Circuit breaker is open — structured LLM calls temporarily suspended",
-                    )
-
-                if self._primary:
-                    try:
-                        start = time.time()
-                        result = self._primary.invoke(messages, **kwargs)
-                        self._cb.record_success()
-                        logger.info("Primary structured LLM call succeeded", extra={
-                            "request_id": rid,
-                            "provider": "openai",
-                            "model": "gpt-4o-mini",
-                            "duration_ms": round((time.time() - start) * 1000, 2),
-                        })
-                        return result
-                    except Exception as e:
-                        last_error = e
-                        self._cb.record_failure()
-                        logger.warning("Primary structured LLM failed, falling back to Groq", extra={
-                            "request_id": rid,
-                            "provider": "openai",
-                            "error_type": type(e).__name__,
-                            "error": str(e),
-                        })
-
-                if self._fallback and self._cb.can_execute():
-                    try:
-                        start = time.time()
-                        result = self._fallback.invoke(messages, **kwargs)
-                        self._cb.record_success()
-                        logger.info("Fallback structured LLM call completed", extra={
-                            "request_id": rid,
-                            "provider": "groq",
-                            "model": "llama-3.1-8b-instant",
-                            "duration_ms": round((time.time() - start) * 1000, 2),
-                        })
-                        return result
-                    except Exception as e:
-                        last_error = e
-                        self._cb.record_failure()
-                        logger.error("Fallback structured LLM also failed", extra={
-                            "request_id": rid,
-                            "provider": "groq",
-                            "error_type": type(e).__name__,
-                            "error": str(e),
-                        })
-
-                if last_error:
-                    raise last_error
-                raise LLMUnavailableError(
-                    "No LLM providers available: both OpenAI and Groq are unreachable"
-                )
-
-        return FallbackChain(primary, fallback_llm, rid=request_id_var.get() or "unknown", cb=circuit_breaker)
-
-    def get_tool_calling_llm(self, tools):
-        """
-        Return an LLM-like callable with tools bound for tool-calling.
-
-        Tries primary (OpenAI) first with fallback to Groq.
-        Handles circuit breaker and error logging.
-        """
+    def get_tool_calling_llm(self, tools, **kwargs):
         if self._primary is None and self._fallback is None:
             raise LLMUnavailableError(
                 "No LLM providers available: both OPENAI_API_KEY and GROQ_API_KEY are missing"
@@ -242,73 +252,4 @@ class LLMProvider:
                 "No LLM providers available: both OpenAI and Groq are unreachable"
             )
 
-        circuit_breaker = self._circuit_breaker
-        rid = request_id_var.get() or "unknown"
-
-        class ToolCallingChain:
-            def __init__(self, primary, fallback, cb, rid):
-                self._primary = primary
-                self._fallback = fallback
-                self._cb = cb
-                self._rid = rid
-
-            def invoke(self, messages, **kwargs):
-                rid = self._rid or request_id_var.get() or "unknown"
-                last_error = None
-
-                if not self._cb.can_execute():
-                    raise LLMUnavailableError(
-                        "Circuit breaker is open — tool-calling LLM calls temporarily suspended",
-                    )
-
-                if self._primary:
-                    try:
-                        start = time.time()
-                        result = self._primary.invoke(messages, **kwargs)
-                        self._cb.record_success()
-                        logger.info("Primary tool-calling LLM call succeeded", extra={
-                            "request_id": rid,
-                            "provider": "openai",
-                            "model": "gpt-4o-mini",
-                            "duration_ms": round((time.time() - start) * 1000, 2),
-                        })
-                        return result
-                    except Exception as e:
-                        last_error = e
-                        self._cb.record_failure()
-                        logger.warning("Primary tool-calling LLM failed, falling back to Groq", extra={
-                            "request_id": rid,
-                            "provider": "openai",
-                            "error_type": type(e).__name__,
-                            "error": str(e),
-                        })
-
-                if self._fallback and self._cb.can_execute():
-                    try:
-                        start = time.time()
-                        result = self._fallback.invoke(messages, **kwargs)
-                        self._cb.record_success()
-                        logger.info("Fallback tool-calling LLM call completed", extra={
-                            "request_id": rid,
-                            "provider": "groq",
-                            "model": "llama-3.1-8b-instant",
-                            "duration_ms": round((time.time() - start) * 1000, 2),
-                        })
-                        return result
-                    except Exception as e:
-                        last_error = e
-                        self._cb.record_failure()
-                        logger.error("Fallback tool-calling LLM also failed", extra={
-                            "request_id": rid,
-                            "provider": "groq",
-                            "error_type": type(e).__name__,
-                            "error": str(e),
-                        })
-
-                if last_error:
-                    raise last_error
-                raise LLMUnavailableError(
-                    "No LLM providers available: both OpenAI and Groq are unreachable"
-                )
-
-        return ToolCallingChain(primary, fallback_llm, rid=rid, cb=circuit_breaker)
+        return self._make_chain(primary, fallback_llm, "tool-calling")

@@ -1,6 +1,8 @@
+from dataclasses import dataclass
 from .tickers import VIETNAMESE_TICKERS
 
 
+@dataclass
 class GuardrailConfig:
     rate_limit_requests: int = 20
     rate_limit_window_seconds: int = 60

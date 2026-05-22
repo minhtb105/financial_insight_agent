@@ -1,203 +1,66 @@
-from typing import Dict, Any, List, Optional
+from copy import deepcopy
+from typing import Any
+from shared.constants import RATIO_TTL_HOURS
 from shared.utils.time_processor import TimeProcessor
 from infrastructure.api_clients.vn_stock_client import VNStockClient
 from infrastructure.cache import get_cache_manager
 from infrastructure.cache.cache_keys import make_cache_key
-
-_RATIO_TTL_HOURS = 2
-
-
-def _cache() -> Optional[Any]:
-    return get_cache_manager()
+from shared.base_service import BaseService
 
 
-def handle_financial_ratio_query(parsed: Dict[str, Any]) -> Dict[str, Any]:
-    tickers = parsed.get("tickers") or []
-    if not tickers:
-        return {"error": "Missing ticker"}
-
-    requested_field = parsed.get("requested_field", "pe")
-
+def _ensure_float(v, default: float = 0.0) -> float:
+    if v is None:
+        return default
     try:
-        results = {}
+        f = float(v)
+        return f if f == f else default
+    except (ValueError, TypeError):
+        return default
 
+
+class FinancialRatioService(BaseService):
+    def __init__(self) -> None:
+        """Khởi tạo FinancialRatioService."""
+        super().__init__("financial_ratio_service")
+
+    def handle_query(
+        self,
+        tickers: list[str],
+        field: str = "pe",
+    ) -> dict[str, Any]:
+        """Truy vấn chỉ số tài chính cho danh sách mã chứng khoán.
+
+        Args:
+            tickers: Danh sách mã chứng khoán.
+            field: Loại chỉ số cần lấy.
+
+        Returns:
+            Dict chứa chỉ số tài chính cho từng mã.
+        """
+        err = self._require_tickers(tickers)
+        if err:
+            return err
+
+        results = {}
         for ticker in tickers:
             try:
                 client = VNStockClient(ticker=ticker)
-                ratios_data = get_financial_ratios(client, requested_field, parsed)
-                results[ticker] = ratios_data
-
+                _ = client.ticker
+                results[ticker] = get_financial_ratios(client, field, {"requested_field": field})
             except Exception as e:
+                self.logger.error(f"Failed to init VNStockClient for {ticker}: {e}")
                 results[ticker] = {"error": str(e)}
-
-        return results if results else {"error": "No valid data found"}
-
-    except Exception as e:
-        return {"error": str(e)}
+        return results
 
 
-def get_financial_ratios(client: VNStockClient, ratio_type: str = None, parsed: Dict[str, Any] = None) -> Dict[str, Any]:
-    try:
-        ticker = client.ticker
-        cache = _cache()
-        rt = ratio_type or "all"
-        cache_key = make_cache_key("financial_ratio", ticker, ratio_type=rt)
-        cached = cache.get(cache_key) if cache else None
-        if cached is not None:
-            if parsed:
-                tp = TimeProcessor()
-                tp_result = tp.process_time_params(parsed)
-                for key, val in cached.items():
-                    if isinstance(val, dict) and "time_range" in val:
-                        val["time_range"] = tp_result.get("time_description", "Latest")
-            return cached
+_financial_ratio_service = FinancialRatioService()
 
-        financial_data = client.company.financial_statement()
 
-        if financial_data is None or financial_data.empty:
-            return {"error": "No financial data available"}
-
-        market_data = client.company.market_data()
-
-        ratios = {}
-
-        revenue = financial_data.get('revenue', 0)
-        net_profit = financial_data.get('net_profit', 0)
-        total_assets = financial_data.get('total_assets', 0)
-        total_equity = financial_data.get('equity', 0)
-        total_liabilities = financial_data.get('total_liabilities', 0)
-
-        time_processor = TimeProcessor()
-        time_params = time_processor.process_time_params(parsed) if parsed else time_processor.get_default_time_range()
-
-        if ratio_type is None or ratio_type == "pe":
-            eps = financial_data.get('eps', 0)
-            if eps != 0 and market_data.get('current_price'):
-                pe_ratio = market_data['current_price'] / eps
-                ratios['pe_ratio'] = {
-                    "value": pe_ratio,
-                    "eps": eps,
-                    "current_price": market_data['current_price'],
-                    "interpretation": get_pe_interpretation(pe_ratio),
-                    "time_range": time_params.get("time_description", "Latest")
-                }
-
-        if ratio_type is None or ratio_type == "pb":
-            book_value_per_share = financial_data.get('book_value_per_share', 0)
-            if book_value_per_share != 0 and market_data.get('current_price'):
-                pb_ratio = market_data['current_price'] / book_value_per_share
-                ratios['pb_ratio'] = {
-                    "value": pb_ratio,
-                    "book_value_per_share": book_value_per_share,
-                    "current_price": market_data['current_price'],
-                    "interpretation": get_pb_interpretation(pb_ratio),
-                    "time_range": time_params.get("time_description", "Latest")
-                }
-
-        if ratio_type is None or ratio_type == "roe":
-            if total_equity != 0:
-                roe = (net_profit / total_equity) * 100
-                ratios['roe'] = {
-                    "value": roe,
-                    "net_profit": net_profit,
-                    "total_equity": total_equity,
-                    "interpretation": get_roe_interpretation(roe),
-                    "time_range": time_params.get("time_description", "Latest")
-                }
-
-        if ratio_type is None or ratio_type == "eps":
-            shares_outstanding = financial_data.get('shares_outstanding', 0)
-            if shares_outstanding != 0:
-                eps = net_profit / shares_outstanding
-                ratios['eps'] = {
-                    "value": eps,
-                    "net_profit": net_profit,
-                    "shares_outstanding": shares_outstanding,
-                    "interpretation": get_eps_interpretation(eps),
-                    "time_range": time_params.get("time_description", "Latest")
-                }
-
-        if ratio_type is None or ratio_type == "current_ratio":
-            current_assets = financial_data.get('current_assets', 0)
-            current_liabilities = financial_data.get('current_liabilities', 0)
-            if current_liabilities != 0:
-                current_ratio = current_assets / current_liabilities
-                ratios['current_ratio'] = {
-                    "value": current_ratio,
-                    "current_assets": current_assets,
-                    "current_liabilities": current_liabilities,
-                    "interpretation": get_current_ratio_interpretation(current_ratio),
-                    "time_range": time_params.get("time_description", "Latest")
-                }
-
-        if ratio_type is None or ratio_type == "debt_to_equity":
-            if total_equity != 0:
-                debt_to_equity = total_liabilities / total_equity
-                ratios['debt_to_equity'] = {
-                    "value": debt_to_equity,
-                    "total_liabilities": total_liabilities,
-                    "total_equity": total_equity,
-                    "interpretation": get_debt_to_equity_interpretation(debt_to_equity),
-                    "time_range": time_params.get("time_description", "Latest")
-                }
-
-        if ratio_type is None or ratio_type == "profit_margin":
-            if revenue != 0:
-                profit_margin = (net_profit / revenue) * 100
-                ratios['profit_margin'] = {
-                    "value": profit_margin,
-                    "net_profit": net_profit,
-                    "revenue": revenue,
-                    "interpretation": get_profit_margin_interpretation(profit_margin),
-                    "time_range": time_params.get("time_description", "Latest")
-                }
-
-        if ratio_type is None or ratio_type == "quick_ratio":
-            cash_and_equivalents = financial_data.get('cash_and_equivalents', 0)
-            marketable_securities = financial_data.get('marketable_securities', 0)
-            current_liabilities = financial_data.get('current_liabilities', 0)
-
-            if current_liabilities != 0:
-                quick_assets = cash_and_equivalents + marketable_securities
-                quick_ratio = quick_assets / current_liabilities
-                ratios['quick_ratio'] = {
-                    "value": quick_ratio,
-                    "quick_assets": quick_assets,
-                    "current_liabilities": current_liabilities,
-                    "interpretation": get_quick_ratio_interpretation(quick_ratio),
-                    "time_range": time_params.get("time_description", "Latest")
-                }
-
-        if ratio_type is None or ratio_type == "asset_turnover":
-            if total_assets != 0:
-                asset_turnover = revenue / total_assets
-                ratios['asset_turnover'] = {
-                    "value": asset_turnover,
-                    "revenue": revenue,
-                    "total_assets": total_assets,
-                    "interpretation": get_asset_turnover_interpretation(asset_turnover),
-                    "time_range": time_params.get("time_description", "Latest")
-                }
-
-        if ratio_type is None or ratio_type == "dividend_yield":
-            dividend_per_share = financial_data.get('dividend_per_share', 0)
-            if market_data.get('current_price') and market_data['current_price'] != 0:
-                dividend_yield = (dividend_per_share / market_data['current_price']) * 100
-                ratios['dividend_yield'] = {
-                    "value": dividend_yield,
-                    "dividend_per_share": dividend_per_share,
-                    "current_price": market_data['current_price'],
-                    "interpretation": get_dividend_yield_interpretation(dividend_yield),
-                    "time_range": time_params.get("time_description", "Latest")
-                }
-
-        result = ratios if ratios else {"error": "No ratios calculated"}
-        if cache and "error" not in result:
-            cache.set(cache_key, result, ttl_hours=_RATIO_TTL_HOURS)
-        return result
-
-    except Exception as e:
-        return {"error": str(e)}
+def handle_financial_ratio_query(
+    tickers: list[str],
+    field: str = "pe",
+) -> dict[str, Any]:
+    return _financial_ratio_service.handle_query(tickers=tickers, field=field)
 
 
 def get_pe_interpretation(pe_ratio: float) -> str:
@@ -308,162 +171,175 @@ def get_dividend_yield_interpretation(dividend_yield: float) -> str:
         return "High yield - Very strong income generation (may be unsustainable)"
 
 
-def compare_financial_ratios(tickers: List[str], ratio_type: str) -> Dict[str, Any]:
+_RATIO_ENTRIES: dict[str, dict[str, Any]] = {
+    "pe": {
+        "key": "pe_ratio",
+        "extract": lambda row, market: {
+            "eps": _ensure_float(row.get("eps")),
+            "current_price": market.get("current_price", 0),
+        },
+        "guard": lambda vals: vals["eps"] != 0 and vals["current_price"],
+        "compute": lambda vals: vals["current_price"] / vals["eps"],
+        "interpret": get_pe_interpretation,
+    },
+    "pb": {
+        "key": "pb_ratio",
+        "extract": lambda row, market: {
+            "book_value_per_share": _ensure_float(row.get("book_value_per_share")),
+            "current_price": market.get("current_price", 0),
+        },
+        "guard": lambda vals: vals["book_value_per_share"] != 0 and vals["current_price"],
+        "compute": lambda vals: vals["current_price"] / vals["book_value_per_share"],
+        "interpret": get_pb_interpretation,
+    },
+    "roe": {
+        "key": "roe",
+        "extract": lambda row, market: {
+            "net_profit": _ensure_float(row.get("net_profit")),
+            "total_equity": _ensure_float(row.get("equity")),
+        },
+        "guard": lambda vals: vals["total_equity"] != 0,
+        "compute": lambda vals: (vals["net_profit"] / vals["total_equity"]) * 100,
+        "interpret": get_roe_interpretation,
+    },
+    "eps": {
+        "key": "eps",
+        "extract": lambda row, market: {
+            "net_profit": _ensure_float(row.get("net_profit")),
+            "shares_outstanding": _ensure_float(row.get("shares_outstanding")),
+        },
+        "guard": lambda vals: vals["shares_outstanding"] != 0,
+        "compute": lambda vals: vals["net_profit"] / vals["shares_outstanding"],
+        "interpret": get_eps_interpretation,
+    },
+    "current_ratio": {
+        "key": "current_ratio",
+        "extract": lambda row, market: {
+            "current_assets": _ensure_float(row.get("current_assets")),
+            "current_liabilities": _ensure_float(row.get("current_liabilities")),
+        },
+        "guard": lambda vals: vals["current_liabilities"] != 0,
+        "compute": lambda vals: vals["current_assets"] / vals["current_liabilities"],
+        "interpret": get_current_ratio_interpretation,
+    },
+    "debt_to_equity": {
+        "key": "debt_to_equity",
+        "extract": lambda row, market: {
+            "total_liabilities": _ensure_float(row.get("total_liabilities")),
+            "total_equity": _ensure_float(row.get("equity")),
+        },
+        "guard": lambda vals: vals["total_equity"] != 0,
+        "compute": lambda vals: vals["total_liabilities"] / vals["total_equity"],
+        "interpret": get_debt_to_equity_interpretation,
+    },
+    "profit_margin": {
+        "key": "profit_margin",
+        "extract": lambda row, market: {
+            "net_profit": _ensure_float(row.get("net_profit")),
+            "revenue": _ensure_float(row.get("revenue")),
+        },
+        "guard": lambda vals: vals["revenue"] != 0,
+        "compute": lambda vals: (vals["net_profit"] / vals["revenue"]) * 100,
+        "interpret": get_profit_margin_interpretation,
+    },
+    "quick_ratio": {
+        "key": "quick_ratio",
+        "extract": lambda row, market: {
+            "quick_assets": _ensure_float(row.get("cash_and_equivalents")) + _ensure_float(row.get("marketable_securities")),
+            "current_liabilities": _ensure_float(row.get("current_liabilities")),
+        },
+        "guard": lambda vals: vals["current_liabilities"] != 0,
+        "compute": lambda vals: vals["quick_assets"] / vals["current_liabilities"],
+        "interpret": get_quick_ratio_interpretation,
+    },
+    "asset_turnover": {
+        "key": "asset_turnover",
+        "extract": lambda row, market: {
+            "revenue": _ensure_float(row.get("revenue")),
+            "total_assets": _ensure_float(row.get("total_assets")),
+        },
+        "guard": lambda vals: vals["total_assets"] != 0,
+        "compute": lambda vals: vals["revenue"] / vals["total_assets"],
+        "interpret": get_asset_turnover_interpretation,
+    },
+    "dividend_yield": {
+        "key": "dividend_yield",
+        "extract": lambda row, market: {
+            "dividend_per_share": _ensure_float(row.get("dividend_per_share")),
+            "current_price": market.get("current_price", 0),
+        },
+        "guard": lambda vals: vals["current_price"] != 0,
+        "compute": lambda vals: (vals["dividend_per_share"] / vals["current_price"]) * 100,
+        "interpret": get_dividend_yield_interpretation,
+    },
+}
+
+
+def get_financial_ratios(
+    client: VNStockClient, ratio_type: str | None = None, parsed: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Lấy các chỉ số tài chính cho một mã chứng khoán.
+
+    Args:
+        client: Đối tượng VNStockClient đã khởi tạo.
+        ratio_type: Loại chỉ số cần lấy (pe, pb, roe, ...).
+        parsed: Dict chứa tham số thời gian.
+
+    Returns:
+        Dict chứa các chỉ số tài chính hoặc lỗi.
+    """
     try:
-        comparison_results = {}
+        ticker = client.ticker
+        cache = _cache()
+        rt = ratio_type or "all"
+        cache_key = make_cache_key("financial_ratio", ticker, ratio_type=rt)
+        cached = cache.get(cache_key) if cache else None
+        if cached is not None:
+            if parsed:
+                result = deepcopy(cached)
+                tp = TimeProcessor()
+                tp_result = tp.process_time_params(parsed)
+                for val in result.values():
+                    if isinstance(val, dict):
+                        val["time_range"] = tp_result.get("time_description", "Latest")
+                return result
+            return cached
 
-        for ticker in tickers:
-            try:
-                client = VNStockClient(ticker=ticker)
-                ratios = get_financial_ratios(client, ratio_type)
+        financial_data = client.company.financial_statement()
 
-                if ratio_type in ratios:
-                    comparison_results[ticker] = ratios[ratio_type]
-                else:
-                    comparison_results[ticker] = {"error": f"No {ratio_type} data available"}
+        if financial_data is None or financial_data.empty:
+            return {"error": "No financial data available"}
 
-            except Exception as e:
-                comparison_results[ticker] = {"error": str(e)}
+        market_data = client.company.market_data()
 
-        valid_values = []
-        for ticker, data in comparison_results.items():
-            if "error" not in data and "value" in data:
-                valid_values.append((ticker, data["value"]))
+        ratios = {}
 
-        if valid_values:
-            sorted_values = sorted(valid_values, key=lambda x: x[1], reverse=True)
+        row = financial_data.iloc[0].to_dict() if not financial_data.empty else {}
 
-            comparison_results["comparison"] = {
-                "sorted_by_value": sorted_values,
-                "highest": sorted_values[0],
-                "lowest": sorted_values[-1],
-                "mean": sum(v[1] for v in valid_values) / len(valid_values),
-                "count": len(valid_values)
-            }
+        time_processor = TimeProcessor()
+        time_params = (
+            time_processor.process_time_params(parsed)
+            if parsed
+            else time_processor.get_default_time_range()
+        )
+        time_range = time_params.get("time_description", "Latest")
 
-        return comparison_results
+        for rt_name, cfg in _RATIO_ENTRIES.items():
+            if ratio_type is None or ratio_type == rt_name:
+                vals = cfg["extract"](row, market_data)
+                if cfg["guard"](vals):
+                    result = cfg["compute"](vals)
+                    ratios[cfg["key"]] = {
+                        "value": result,
+                        **vals,
+                        "interpretation": cfg["interpret"](result),
+                        "time_range": time_range,
+                    }
+
+        result = ratios if ratios else {"error": "No ratios calculated"}
+        if cache and "error" not in result:
+            cache.set(cache_key, result, ttl_hours=RATIO_TTL_HOURS)
+        return result
 
     except Exception as e:
         return {"error": str(e)}
-
-
-def calculate_financial_health_score(ticker: str) -> Dict[str, Any]:
-    try:
-        client = VNStockClient(ticker=ticker)
-        ratios = get_financial_ratios(client)
-
-        score_components = {}
-        total_score = 0
-        max_score = 0
-
-        if "pe_ratio" in ratios:
-            pe_value = ratios["pe_ratio"]["value"]
-            if pe_value < 10:
-                pe_score = 6
-            elif pe_value < 20:
-                pe_score = 10
-            elif pe_value < 30:
-                pe_score = 7
-            else:
-                pe_score = 3
-            score_components["pe_ratio"] = pe_score
-            total_score += pe_score
-            max_score += 10
-
-        if "roe" in ratios:
-            roe_value = ratios["roe"]["value"]
-            if roe_value < 5:
-                roe_score = 2
-            elif roe_value < 15:
-                roe_score = 6
-            elif roe_value < 25:
-                roe_score = 9
-            else:
-                roe_score = 10
-            score_components["roe"] = roe_score
-            total_score += roe_score
-            max_score += 10
-
-        if "current_ratio" in ratios:
-            cr_value = ratios["current_ratio"]["value"]
-            if cr_value < 1:
-                cr_score = 2
-            elif cr_value < 1.5:
-                cr_score = 7
-            elif cr_value < 3:
-                cr_score = 10
-            else:
-                cr_score = 6
-            score_components["current_ratio"] = cr_score
-            total_score += cr_score
-            max_score += 10
-
-        if "debt_to_equity" in ratios:
-            dte_value = ratios["debt_to_equity"]["value"]
-            if dte_value < 0.5:
-                dte_score = 10
-            elif dte_value < 1.5:
-                dte_score = 7
-            elif dte_value < 2.5:
-                dte_score = 4
-            else:
-                dte_score = 1
-            score_components["debt_to_equity"] = dte_score
-            total_score += dte_score
-            max_score += 10
-
-        if "profit_margin" in ratios:
-            pm_value = ratios["profit_margin"]["value"]
-            if pm_value < 0:
-                pm_score = 1
-            elif pm_value < 5:
-                pm_score = 4
-            elif pm_value < 15:
-                pm_score = 7
-            elif pm_value < 25:
-                pm_score = 9
-            else:
-                pm_score = 10
-            score_components["profit_margin"] = pm_score
-            total_score += pm_score
-            max_score += 10
-
-        if max_score > 0:
-            overall_score = (total_score / max_score) * 100
-        else:
-            overall_score = 0
-
-        return {
-            "ticker": ticker,
-            "score_components": score_components,
-            "total_score": total_score,
-            "max_score": max_score,
-            "overall_score": overall_score,
-            "health_level": get_health_level(overall_score),
-            "interpretation": get_health_interpretation(overall_score, score_components)
-        }
-
-    except Exception as e:
-        return {"error": str(e)}
-
-
-def get_health_level(score: float) -> str:
-    if score < 40:
-        return "Poor"
-    elif score < 60:
-        return "Fair"
-    elif score < 80:
-        return "Good"
-    else:
-        return "Excellent"
-
-
-def get_health_interpretation(score: float, components: Dict[str, int]) -> str:
-    if score < 40:
-        return "Company has significant financial issues. High risk investment."
-    elif score < 60:
-        return "Company has moderate financial concerns. Proceed with caution."
-    elif score < 80:
-        return "Company has generally good financial health. Moderate risk."
-    else:
-        return "Company has excellent financial health. Low risk investment."

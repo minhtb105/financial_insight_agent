@@ -5,17 +5,32 @@ from .base import Guardrail, GuardrailResult
 from .config import GuardrailConfig
 
 INJECTION_PATTERNS: list[re.Pattern] = [
-    re.compile(r"ignore\s+(all\s+)?(previous|above|prior)\s+(instructions|messages|context|prompts?)", re.I),
-    re.compile(r"(you\s+are\s+(not|now)|you.ve?\s+been\s+(replaced|hacked)|you\s+must\s+obey)", re.I),
+    re.compile(
+        r"ignore\s+(all\s+)?(previous|above|prior)\s+(instructions|messages|context|prompts?)", re.I
+    ),
+    re.compile(
+        r"(you\s+are\s+(not|now)|you.ve?\s+been\s+(replaced|hacked)|you\s+must\s+obey)", re.I
+    ),
     re.compile(r"(forget|ignore|disregard|bypass)\s+(everything|previous|all)", re.I),
     re.compile(r"(system\s+prompt|initial\s+prompt|original\s+instructions)", re.I),
     re.compile(r"<<SYS>>|\[INST\]|<\|im_start\|>|<\|sys\|>", re.I),
-    re.compile(r"(repeat|print|output|show|reveal|display|dump)\s+(the\s+)?(above|entire|full|whole)\s+(prompt|instruction|message|text|system)", re.I),
-    re.compile(r"DAN|jail.?break|unfiltered|no\s+(filter|restrictions|limits|rules|boundaries)", re.I),
+    re.compile(
+        r"(repeat|print|output|show|reveal|display|dump)\s+(the\s+)?(above|entire|full|whole)\s+(prompt|instruction|message|text|system)",
+        re.I,
+    ),
+    re.compile(
+        r"DAN|jail.?break|unfiltered|no\s+(filter|restrictions|limits|rules|boundaries)", re.I
+    ),
     re.compile(r"role\s*:\s*system|role\s*:\s*assistant", re.I),
-    re.compile(r"pretend\s+(to\s+be|you.are)\s+(an?|the)\s+(AI|AGI|unrestricted|free|unfiltered)", re.I),
-    re.compile(r"(new\s+)?instructions?\s*[:：]", re.I),
-    re.compile(r"(answer|respond|reply)\s+(in\s+)?(base64|hex|binary|json|yaml|xml|markdown)", re.I),
+    re.compile(
+        r"pretend\s+(to\s+be|you.are)\s+(an?|the)\s+(AI|AGI|unrestricted|free|unfiltered)", re.I
+    ),
+    # NOTE: standalone "instructions:" is intentionally excluded — it false-positives
+    # on normal English/Vietnamese text (e.g. "hướng dẫn" context).
+    # Only flag when combined with actual injection verbs (handled above).
+    re.compile(
+        r"(answer|respond|reply)\s+(in\s+)?(base64|hex|binary|json|yaml|xml|markdown)", re.I
+    ),
     re.compile(r"(from\s+)?now\s+on(wards?)?,\s*(you\s+)?(are|will|must)", re.I),
     re.compile(r"(overwrite|override|replace)\s+(the\s+)?(system|default|original)", re.I),
 ]
@@ -23,33 +38,33 @@ INJECTION_PATTERNS: list[re.Pattern] = [
 HOMOGLYPHS: dict[str, str] = {
     "\u0430": "a",
     "\u0435": "e",
-    "\u043E": "o",
+    "\u043e": "o",
     "\u0440": "p",
     "\u0441": "c",
     "\u0445": "x",
     "\u0456": "i",
     "\u0455": "s",
     "\u0432": "b",
-    "\u043A": "k",
-    "\u041C": "M",
-    "\u041D": "H",
+    "\u043a": "k",
+    "\u041c": "M",
+    "\u041d": "H",
     "\u0420": "P",
     "\u0421": "C",
     "\u0425": "X",
     "\u0410": "A",
     "\u0415": "E",
-    "\u041E": "O",
+    "\u041e": "O",
     "\u0422": "T",
     "\u0401": "E",
 }
 
 ZERO_WIDTH_CHARS: set[str] = {
-    "\u200B",
-    "\u200C",
-    "\u200D",
-    "\uFEFF",
-    "\u200E",
-    "\u200F",
+    "\u200b",
+    "\u200c",
+    "\u200d",
+    "\ufeff",
+    "\u200e",
+    "\u200f",
     "\u2060",
     "\u2061",
     "\u2062",
@@ -75,16 +90,10 @@ class ContentFilter(Guardrail):
         return "content_filter"
 
     def _has_zero_width(self, text: str) -> bool:
-        for ch in text:
-            if ch in ZERO_WIDTH_CHARS:
-                return True
-        return False
+        return any(ch in ZERO_WIDTH_CHARS for ch in text)
 
     def _has_homoglyph(self, text: str) -> bool:
-        for ch in text:
-            if ch in HOMOGLYPHS:
-                return True
-        return False
+        return any(ch in HOMOGLYPHS for ch in text)
 
     def _normalize_homoglyphs(self, text: str) -> str:
         result = []
@@ -112,12 +121,16 @@ class ContentFilter(Guardrail):
         return (special_count / len(text)) > self.max_special_char_ratio
 
     def _detect_base64(self, text: str) -> bool:
-        b64_pattern = re.compile(
-            r"(?:[A-Za-z0-9+/]{40,}(?:[A-Za-z0-9+/]*={0,2})?)"
-        )
+        b64_pattern = re.compile(r"(?:[A-Za-z0-9+/]{60,}(?:[A-Za-z0-9+/]*={0,2})?)")
         matches = b64_pattern.findall(text)
         for match in matches:
-            if len(match) >= 40:
+            if len(match) >= 60:
+                has_plus = "+" in match
+                has_slash = "/" in match
+                if not (has_plus and has_slash):
+                    continue
+                if len(match) % 4 != 0:
+                    continue
                 alnum = sum(1 for ch in match if ch.isalnum())
                 if alnum / len(match) > 0.8:
                     return True
@@ -132,15 +145,14 @@ class ContentFilter(Guardrail):
             r"\*{5,}",
             r"\n\s*\n\s*\n",
         ]
-        for pattern in sep_patterns:
-            if re.search(pattern, text):
-                return True
-        return False
+        return any(re.search(pattern, text) for pattern in sep_patterns)
 
     def _detect_unicode_normalization_attack(self, text: str) -> bool:
         nfkd = unicodedata.normalize("NFKD", text)
         if nfkd != text:
-            suspicious = re.findall(r'[\u0300-\u036F\u1AB0-\u1AFF\u1DC0-\u1DFF\u20D0-\u20FF\uFE00-\uFE0F]', text)
+            suspicious = re.findall(
+                r"[\u0300-\u036F\u1AB0-\u1AFF\u1DC0-\u1DFF\u20D0-\u20FF\uFE00-\uFE0F]", text
+            )
             return len(suspicious) > 5
         return False
 
@@ -149,7 +161,7 @@ class ContentFilter(Guardrail):
         normalized = self._normalize_homoglyphs(normalized)
         return normalized
 
-    def validate(self, query: str, client_ip: str) -> GuardrailResult:
+    def validate(self, query: str, _client_ip: str) -> GuardrailResult:
         nfkd_checks = unicodedata.normalize("NFKD", query)
 
         raw = query

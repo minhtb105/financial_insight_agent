@@ -1,5 +1,7 @@
-from typing import Dict, Any, List, Optional
+from typing import Any
 from statistics import mean
+from datetime import datetime, timedelta, timezone
+from shared.constants import SECTOR_TTL_HOURS
 from infrastructure.api_clients.vn_stock_client import VNStockClient
 from infrastructure.observability import get_logger
 from infrastructure.cache import get_cache_manager
@@ -7,14 +9,24 @@ from infrastructure.cache.cache_keys import make_cache_key
 
 logger = get_logger(__name__)
 
-_SECTOR_TTL_HOURS = 2
+_TIMEFRAME_DAYS = {
+    "1d": 1,
+    "5d": 5,
+    "1w": 7,
+    "2w": 14,
+    "1m": 30,
+    "3m": 90,
+}
 
 
-def _cache() -> Optional[Any]:
-    return get_cache_manager()
+def _resolve_timeframe(timeframe: str) -> tuple[str, str]:
+    days = _TIMEFRAME_DAYS.get(timeframe, 30)
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=days)
+    return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
 
 
-def _get_tickers_in_sector(sector: str) -> List[str]:
+def _get_tickers_in_sector(sector: str) -> list[str]:
     try:
         client = VNStockClient(ticker="VNINDEX")
         companies = client.company.overview()
@@ -27,18 +39,21 @@ def _get_tickers_in_sector(sector: str) -> List[str]:
             mask = companies["industry"].str.lower().str.contains(sector.lower(), na=False)
             return companies[mask]["ticker"].tolist() if "ticker" in companies.columns else []
         if "company_code" in companies.columns:
-            mask = companies["sector"].str.lower().str.contains(sector.lower(), na=False) if "sector" in companies.columns else []
-            return companies[mask]["company_code"].tolist() if not mask.empty else []
+            col = "sector" if "sector" in companies.columns else ("industry" if "industry" in companies.columns else None)
+            if col:
+                mask = companies[col].str.lower().str.contains(sector.lower(), na=False)
+                return companies[mask]["company_code"].tolist()
+            return []
         return []
     except Exception as e:
         logger.warning(f"Cannot query companies by sector '{sector}': {e}")
         return []
 
 
-def _get_performance(ticker: str) -> Optional[Dict[str, Any]]:
+def _get_performance(ticker: str, start_date: str, end_date: str) -> dict[str, Any] | None:
     try:
         client = VNStockClient(ticker=ticker)
-        data = client.fetch_trading_data(start=None, end=None, interval="1d")
+        data = client.fetch_trading_data(start=start_date, end=end_date, interval="1d")
         if data is None or data.empty or len(data) < 2:
             return None
         first = float(data.iloc[0]["close"])
@@ -56,16 +71,16 @@ def _get_performance(ticker: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def handle_sector_query(parsed: Dict[str, Any]) -> Dict[str, Any]:
-    sector = parsed.get("sector", "")
-    metric = parsed.get("metric", "performance")
-    timeframe = parsed.get("timeframe", "1w")
-
+def handle_sector_query(
+    sector: str,
+    metric: str = "performance",
+    timeframe: str = "1w",
+) -> dict[str, Any]:
     if not sector:
         return {"error": "Missing sector parameter"}
 
     try:
-        cache = _cache()
+        cache = get_cache_manager()
         cache_key = make_cache_key("sector", sector, metric, timeframe)
         cached = cache.get(cache_key) if cache else None
         if cached is not None:
@@ -74,16 +89,16 @@ def handle_sector_query(parsed: Dict[str, Any]) -> Dict[str, Any]:
         tickers = _get_tickers_in_sector(sector)
 
         if not tickers:
-            result = {
+            return {
                 "sector": sector,
                 "error": "Sector data unavailable",
                 "suggested_tickers": [],
             }
-            return result
 
+        start_date, end_date = _resolve_timeframe(timeframe)
         performances = []
         for ticker in tickers:
-            perf = _get_performance(ticker)
+            perf = _get_performance(ticker, start_date, end_date)
             if perf:
                 performances.append(perf)
 
@@ -111,7 +126,7 @@ def handle_sector_query(parsed: Dict[str, Any]) -> Dict[str, Any]:
         }
 
         if cache:
-            cache.set(cache_key, result, ttl_hours=_SECTOR_TTL_HOURS)
+            cache.set(cache_key, result, ttl_hours=SECTOR_TTL_HOURS)
         return result
 
     except Exception as e:

@@ -1,20 +1,24 @@
 """
 Memory architecture for the financial insight agent.
 
-Implements a 3-tier memory system for context retention and learning:
-- Short-term: Redis-based fast access (2h TTL)
-- Episodic: PostgreSQL with pgvector for semantic search
-- Long-term: PostgreSQL for persistent knowledge storage
+Simplified to short-term Redis-backed memory only.
 """
 
-from .short_term.memory import ShortTermMemory
-from .episodic.memory import EpisodicMemory
-from .long_term.memory import LongTermMemory
-from .memory_manager import MemoryManager
+__all__ = ["MemoryManager", "ShortTermMemory"]
 
-__all__ = [
-    'ShortTermMemory',
-    'EpisodicMemory', 
-    'LongTermMemory',
-    'MemoryManager'
-]
+
+def __getattr__(name):
+    import importlib
+
+    _LAZY = {
+        "ShortTermMemory": ".short_term.memory",
+        "MemoryManager": ".memory_manager",
+        "memory_manager": ".memory_manager",
+        "short_term": ".short_term.memory",
+    }
+    if name in _LAZY:
+        mod = importlib.import_module(_LAZY[name], __package__)
+        if hasattr(mod, name):
+            return getattr(mod, name)
+        return mod
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

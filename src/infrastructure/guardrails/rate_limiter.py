@@ -42,29 +42,49 @@ class RateLimiter(Guardrail):
         )
         self.hourly_counts: dict[str, tuple[int, float]] = {}
         self.hourly_limit = cfg.rate_limit_hourly_per_ip
-        self.hourly_lock = threading.Lock()
-        self.cleanup_lock = threading.Lock()
+        self._lock = threading.Lock()
+        self._last_cleanup = time.monotonic()
 
     @property
     def name(self) -> str:
         return "rate_limiter"
 
-    def validate(self, query: str, client_ip: str) -> GuardrailResult:
-        bucket = self.buckets[client_ip]
-        if not bucket.consume():
-            return GuardrailResult(
-                passed=False,
-                reason="Too many requests. Please slow down.",
-                status_code=429,
-                metadata={"client_ip": client_ip, "limit_type": "burst"},
-            )
+    def _cleanup_stale_entries(self):
+        now = time.monotonic()
+        stale_ips = [ip for ip, (_, ws) in list(self.hourly_counts.items()) if now - ws >= 7200]
+        for ip in stale_ips:
+            self.hourly_counts.pop(ip, None)
 
-        with self.hourly_lock:
-            now = time.monotonic()
-            count, window_start = self.hourly_counts.get(client_ip, (0, now))
+    def _cleanup_stale_buckets(self):
+        now = time.monotonic()
+        stale_ips = [
+            ip for ip, bucket in list(self.buckets.items()) if now - bucket.last_refill >= 7200
+        ]
+        for ip in stale_ips:
+            self.buckets.pop(ip, None)
 
-            if now - window_start >= 3600:
-                self.hourly_counts[client_ip] = (1, now)
+    def validate(self, _query: str, client_ip: str) -> GuardrailResult:
+        with self._lock:
+            monotonic_now = time.monotonic()
+            wall_now = time.time()
+            if monotonic_now - self._last_cleanup > 60:
+                self._cleanup_stale_entries()
+                self._cleanup_stale_buckets()
+                self._last_cleanup = monotonic_now
+
+            bucket = self.buckets[client_ip]
+            if not bucket.consume():
+                return GuardrailResult(
+                    passed=False,
+                    reason="Too many requests. Please slow down.",
+                    status_code=429,
+                    metadata={"client_ip": client_ip, "limit_type": "burst"},
+                )
+
+            count, window_start = self.hourly_counts.get(client_ip, (0, wall_now))
+
+            if wall_now - window_start >= 3600:
+                self.hourly_counts[client_ip] = (1, wall_now)
             else:
                 if count >= self.hourly_limit:
                     return GuardrailResult(
