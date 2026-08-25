@@ -8,10 +8,20 @@ _EXPECTED_COLUMNS = {"time", "open", "high", "low", "close", "volume"}
 
 
 class VNStockClient:
-    def __init__(self, ticker: str = "VCB", source: str = "TCBS"):
+    """vnstock wrapper.
+
+    vnstock 3.5 restricts ``Company`` to source 'VCI'/'KBS' and its VCI
+    company endpoint is unstable, while ``Quote`` works reliably on VCI.
+    Defaults therefore differ per underlying class; pass ``source`` to
+    force the same provider for both.
+    """
+
+    def __init__(self, ticker: str = "VCB", source: str | None = None):
         self.ticker = ticker
-        self.company = Company(symbol=ticker, source=source)
-        self.quote = Quote(symbol=ticker, source=source)
+        quote_source = source or "VCI"
+        company_source = source or "KBS"
+        self.company = Company(symbol=ticker, source=company_source)
+        self.quote = Quote(symbol=ticker, source=quote_source)
 
     def company_info(self):
         """Return static company overview"""
@@ -55,7 +65,7 @@ class VNStockClient:
         except ConnectionError as e:
             logger.error("Network error fetching %s: %s", self.ticker, e)
             return pd.DataFrame()
-        except Exception as e:
+        except Exception:
             logger.exception("Unexpected error fetching %s", self.ticker)
             return pd.DataFrame()
 

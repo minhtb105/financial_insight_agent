@@ -34,3 +34,7 @@ src/financial_insight_agent.egg-info/
 .claude/
 .kilo/
 .opencode/
+# Tracing storage & eval artifacts
+data/
+evals/reports/
+user_portfolio_default.json

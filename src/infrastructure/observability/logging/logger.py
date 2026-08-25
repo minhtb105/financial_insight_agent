@@ -182,24 +182,40 @@ class RequestLogger:
         )
         self.clear_request_context()
 
-    def info(self, message: str, **kwargs):
+    def info(self, message: str, *args, **kwargs):
         """Log info message with context."""
+        if args:
+            message = message % args
         self.logger.info(message, extra=kwargs)
 
-    def warning(self, message: str, **kwargs):
+    def warning(self, message: str, *args, **kwargs):
         """Log warning message with context."""
+        if args:
+            message = message % args
         self.logger.warning(message, extra=kwargs)
 
-    def error(self, message: str, **kwargs):
+    def error(self, message: str, *args, **kwargs):
         """Log error message with context."""
+        if args:
+            message = message % args
         self.logger.error(message, extra=kwargs)
 
-    def debug(self, message: str, **kwargs):
+    def exception(self, message: str, *args, **kwargs):
+        """Log exception message with traceback."""
+        if args:
+            message = message % args
+        self.logger.exception(message, extra=kwargs)
+
+    def debug(self, message: str, *args, **kwargs):
         """Log debug message with context."""
+        if args:
+            message = message % args
         self.logger.debug(message, extra=kwargs)
 
-    def critical(self, message: str, **kwargs):
+    def critical(self, message: str, *args, **kwargs):
         """Log critical message with context."""
+        if args:
+            message = message % args
         self.logger.critical(message, extra=kwargs)
 
     def performance_timer(self, operation_name: str) -> PerformanceTimer:

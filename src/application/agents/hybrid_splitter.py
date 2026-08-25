@@ -10,10 +10,13 @@ import logging
 import re
 import time
 import threading
-from typing import Optional
 from collections import OrderedDict
 
-from infrastructure.llm.llm_provider import LLMProvider
+from langchain_core.messages import SystemMessage, HumanMessage
+
+from infrastructure.llm.llm_provider import LLMProvider, MultiQuery
+
+logger = logging.getLogger(__name__)
 
 _MAX_RETRIES = 2
 
@@ -129,14 +132,17 @@ class HybridQuerySplitter:
                     return result
                 del _llm_split_cache[text]
 
-        system_prompt = (
-            "Bạn là bộ tách câu hỏi tài chính.\n"
-            "Nhiệm vụ: tách câu đầu vào thành danh sách các câu hỏi ĐỘC LẬP nếu có nhiều ý định khác nhau.\n"
-            "Nếu chỉ có 1 ý định, trả về danh sách chứa đúng 1 phần tử là câu gốc.\n"
-            "- Không tự tạo câu hỏi mới\n"
-            "- Không viết giải thích\n"
-            "- Output phải là JSON hợp lệ theo schema"
-        )
+        from application.prompts import PromptRegistryError, get_registry
+
+        try:
+            system_prompt = get_registry().render("query_splitter").text
+        except PromptRegistryError:
+            logger.exception("query_splitter prompt render failed — using fallback")
+            system_prompt = (
+                "Bạn là bộ tách câu hỏi tài chính. Tách câu đầu vào thành danh sách "
+                "các câu hỏi ĐỘC LẬP nếu có nhiều ý định; nếu chỉ có 1 ý định, trả về "
+                "danh sách chứa đúng 1 phần tử. Output phải là JSON hợp lệ theo schema."
+            )
 
         for attempt in range(1 + _MAX_RETRIES):
             try:

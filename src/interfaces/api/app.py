@@ -3,10 +3,11 @@ import asyncio
 import ipaddress
 import threading
 from collections import deque
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 import time
 
 from fastapi import FastAPI, APIRouter, Request, HTTPException
+from interfaces.api.routes.traces import router as traces_router
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,6 +16,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from infrastructure.dependencies import init_deps, shutdown_deps
 from infrastructure.observability import get_logger
 from infrastructure.observability.metrics.collector import get_metrics_collector
+from infrastructure.observability.tracing import SpanKind, get_tracer
 from application.agents.agent import StockAgent
 from infrastructure.guardrails.pipeline import GuardrailPipeline
 
@@ -241,45 +243,57 @@ async def trace_middleware(request: Request, call_next):
     request_id = _request_logger.start_request()
     request.state.request_id = request_id
     start_time = time.time()
-    try:
-        # Global rate limiter covers only non-guardrail paths (/health, /ping, etc.).
-        # Guardrail-managed paths (/api/v1/ask-stream) are rate-limited by
-        # GuardrailPipeline.RateLimiter instead — never both on the same endpoint.
-        if request.url.path not in ("/health", "/ping", *_GUARDRAIL_PATHS):
-            await _check_global_rate_limit(_get_client_ip(request))
-        response = await call_next(request)
-        duration = time.time() - start_time
-        metrics_collector = get_metrics_collector()
-        if metrics_collector and not isinstance(response, StreamingResponse):
-            metrics_collector.record_request_metrics(
-                request_type=request.url.path,
-                duration=duration,
-                success=response.status_code < 500,
+    tracer = get_tracer()
+    with tracer.start_span(
+        f"http {request.method} {request.url.path}",
+        SpanKind.HTTP,
+        attributes={"method": request.method, "path": request.url.path},
+        inputs={"query": request.url.query[:300] if request.url.query else None},
+    ) as span:
+        try:
+            # Global rate limiter covers only non-guardrail paths (/health, /ping, etc.).
+            # Guardrail-managed paths (/api/v1/ask-stream) are rate-limited by
+            # GuardrailPipeline.RateLimiter instead — never both on the same endpoint.
+            if request.url.path not in ("/health", "/ping", *_GUARDRAIL_PATHS):
+                await _check_global_rate_limit(_get_client_ip(request))
+            response = await call_next(request)
+            duration = time.time() - start_time
+            metrics_collector = get_metrics_collector()
+            if metrics_collector and not isinstance(response, StreamingResponse):
+                metrics_collector.record_request_metrics(
+                    request_type=request.url.path,
+                    duration=duration,
+                    success=response.status_code < 500,
+                )
+            if not isinstance(response, StreamingResponse):
+                status = "completed" if response.status_code < 500 else "error"
+                _request_logger.end_request(status=status)
+            if span is not None:
+                span.attributes["status_code"] = getattr(response, "status_code", None)
+            return response
+        except HTTPException as exc:
+            _request_logger.end_request(status="error")
+            if span is not None:
+                span.attributes["status_code"] = exc.status_code
+                span.attributes["http_exception"] = str(exc.detail)[:200]
+            raise
+        except Exception as exc:
+            duration = time.time() - start_time
+            metrics_collector = get_metrics_collector()
+            if metrics_collector:
+                metrics_collector.record_request_metrics(
+                    request_type=request.url.path,
+                    duration=duration,
+                    success=False,
+                    error_type=type(exc).__name__,
+                )
+            _request_logger.end_request(status="error", error=str(exc))
+            return _build_error(
+                detail="Internal server error",
+                error_type="internal_error",
+                request_id=getattr(request.state, "request_id", ""),
+                status_code=500,
             )
-        if not isinstance(response, StreamingResponse):
-            status = "completed" if response.status_code < 500 else "error"
-            _request_logger.end_request(status=status)
-        return response
-    except HTTPException:
-        _request_logger.end_request(status="error")
-        raise
-    except Exception as exc:
-        duration = time.time() - start_time
-        metrics_collector = get_metrics_collector()
-        if metrics_collector:
-            metrics_collector.record_request_metrics(
-                request_type=request.url.path,
-                duration=duration,
-                success=False,
-                error_type=type(exc).__name__,
-            )
-        _request_logger.end_request(status="error", error=str(exc))
-        return _build_error(
-            detail="Internal server error",
-            error_type="internal_error",
-            request_id=getattr(request.state, "request_id", ""),
-            status_code=500,
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -363,12 +377,10 @@ async def ask_stock_agent_stream(body: QueryRequest, request: Request):
                     except Exception:
                         pass
                     finally:
-                        try:
+                        with suppress(Exception):
                             asyncio.run_coroutine_threadsafe(
                                 async_queue.put(None), loop
                             ).result()
-                        except Exception:
-                            pass
 
                 loop.run_in_executor(None, _produce)
 
@@ -455,4 +467,5 @@ async def ping():
         headers={"Cache-Control": "no-cache"},
     )
 
+api_router.include_router(traces_router)
 app.include_router(api_router)

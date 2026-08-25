@@ -290,7 +290,7 @@ def get_financial_ratios(
     """
     try:
         ticker = client.ticker
-        cache = _cache()
+        cache = get_cache_manager()
         rt = ratio_type or "all"
         cache_key = make_cache_key("financial_ratio", ticker, ratio_type=rt)
         cached = cache.get(cache_key) if cache else None

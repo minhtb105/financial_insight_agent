@@ -11,9 +11,9 @@ authors = [
 ]
 
 dependencies = [
-    "langchain>=0.3.27",
-    "langchain-openai>=0.3.0",
-    "langchain-groq>=0.3.0",
+    "langchain>=0.3.27,<0.4",
+    "langchain-openai>=0.3.0,<0.4",
+    "langchain-groq>=0.3.0,<0.4",
     "langgraph>=0.5.0",
     "pandas>=2.3.3",
     "numpy>=2.2.6",
@@ -25,8 +25,9 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "redis>=5.0.0",
     "msgpack>=1.0.0",
-    "vnstock>=3.0.0",
+    "vnstock>=3.0.0,<4",
     "sentence-transformers>=2.2.0",
+    "PyYAML>=6.0.1",
 ]
 
 [project.optional-dependencies]
@@ -48,6 +49,14 @@ memory = [
     "psycopg2-binary>=2.9.0",
     "sentence-transformers>=2.2.0",
     "psutil>=5.9.0",
+]
+
+eval = [
+    "ragas>=0.2.6,<0.3",
+    "datasets>=2.20.0,<4",
+    "langchain-community>=0.3.24,<0.4",
+    "openai>=1.50.0",
+    "pyyaml>=6.0.1",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -127,6 +136,8 @@ lines-after-imports = 2
 "src/tests/**" = ["ARG", "PLC0415", "PTH108", "E402", "F841", "PLW0108", "SIM117", "PLR2004", "UP017"]
 "tests/**" = ["ARG", "PLC0415", "PTH108", "E402", "F841", "PLW0108", "SIM117", "PLR2004", "UP017"]
 "__init__.py" = ["F401"]
+# LangChain callback signatures require these parameter names even when unused
+"src/infrastructure/observability/tracing/langchain_handler.py" = ["ARG002"]
 
 [tool.mypy]
 python_version = "3.13"
@@ -151,7 +162,7 @@ ignore_errors = true
 testpaths = ["src/tests"]
 pythonpath = ["src"]
 asyncio_mode = "auto"
-addopts = "-v --cov=src --cov-report=term-missing"
+addopts = "-v"
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]

@@ -158,7 +158,7 @@ def _make_portfolio_service():
     return svc
 
 
-@patch("application.services.portfolio.portfolio_service.get_cache_manager")
+@patch("shared.base_service.get_cache_manager")
 def test_fetch_price_cache_hit(mock_cache):
     mock_cache.return_value.get.return_value = 105.0
     svc = _make_portfolio_service()
@@ -170,7 +170,7 @@ def test_fetch_price_cache_hit(mock_cache):
 
 
 @patch("application.services.portfolio.portfolio_service.VNStockClient")
-@patch("application.services.portfolio.portfolio_service.get_cache_manager")
+@patch("shared.base_service.get_cache_manager")
 def test_fetch_price_cache_miss(mock_cache, mock_client):
     mock_cache.return_value.get.return_value = None
     mock_instance = MagicMock()
@@ -212,7 +212,7 @@ def test_fetch_price_client_exception(mock_cache, mock_client):
 
 
 @patch("application.services.portfolio.portfolio_service.VNStockClient")
-@patch("application.services.portfolio.portfolio_service.get_cache_manager")
+@patch("shared.base_service.get_cache_manager")
 def test_fetch_sector_and_price_cache_hit(mock_cache, mock_client):
     mock_cache.return_value.get.return_value = 105.0
     svc = _make_portfolio_service()
@@ -400,8 +400,7 @@ def test_update_portfolio_new_ticker():
         mock_pm.return_value.get_holdings.return_value = {}
         mock_pm.return_value.portfolio = {"holdings": {}, "transactions": []}
         svc._update_portfolio_data({"VCB": 10})
-    assert mock_pm.return_value.portfolio["holdings"]["VCB"] == 10
-    mock_pm.return_value.save_portfolio.assert_called_once()
+    mock_pm.return_value.add_holding.assert_called_once_with(ticker="VCB", quantity=10, price=0.0)
 
 
 def test_update_portfolio_existing_ticker():
@@ -412,7 +411,7 @@ def test_update_portfolio_existing_ticker():
         mock_pm.return_value.get_holdings.return_value = {"VCB": 5}
         mock_pm.return_value.portfolio = {"holdings": {"VCB": 5}, "transactions": []}
         svc._update_portfolio_data({"VCB": 10})
-    assert mock_pm.return_value.portfolio["holdings"]["VCB"] == 15
+    mock_pm.return_value.add_holding.assert_called_once_with(ticker="VCB", quantity=10, price=0.0)
 
 
 # -- PortfolioService.handle_query ------------------------------------------
@@ -486,7 +485,7 @@ def _make_news_service():
 
 
 def test_filter_articles_by_days():
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     svc = _make_news_service()
     articles = [
@@ -496,7 +495,7 @@ def test_filter_articles_by_days():
     with patch(
         "application.services.portfolio.news_sentiment_service.datetime"
     ) as mock_dt:
-        mock_dt.now.return_value = datetime(2026, 5, 19, 12, 0, 0)
+        mock_dt.now.return_value = datetime(2026, 5, 19, 12, 0, 0, tzinfo=timezone.utc)
         mock_dt.fromisoformat = datetime.fromisoformat
         mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
         result = svc._filter_articles_by_time(articles, {"days": 7})
@@ -525,7 +524,7 @@ def test_filter_articles_empty_date():
     assert len(result) == 1
 
 
-@patch("application.services.portfolio.news_sentiment_service.get_cache_manager")
+@patch("shared.base_service.get_cache_manager")
 def test_fetch_single_news_cache_hit(mock_cache):
     mock_cache.return_value.get.return_value = [{"title": "cached news"}]
     svc = _make_news_service()
@@ -584,13 +583,11 @@ def test_analyze_news_sentiment_empty_tickers():
     assert "error" in result
 
 
+@patch("application.services.portfolio.news_sentiment_service._calc_sentiment_from_articles")
 @patch.object(NewsSentimentService, "get_news_data")
-@patch.object(NewsSentimentService, "get_sentiment_data")
-@patch.object(NewsSentimentService, "get_social_volume")
-def test_analyze_news_sentiment_combines(mock_vol, mock_sent, mock_news):
+def test_analyze_news_sentiment_combines(mock_news, mock_sentiment):
     mock_news.return_value = {"news": {"VCB": [{"title": "a"}]}}
-    mock_sent.return_value = {"sentiment": {"VCB": 0.5}}
-    mock_vol.return_value = {"social_volume": {"VCB": 1}}
+    mock_sentiment.return_value = 0.5
     svc = _make_news_service()
     result = svc.analyze_news_sentiment({"tickers": ["VCB"]})
     assert "VCB" in result

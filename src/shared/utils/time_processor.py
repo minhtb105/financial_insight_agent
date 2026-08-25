@@ -39,8 +39,8 @@ class TimeProcessor:
 
     def validate_time_range(self, start_date: str, end_date: str) -> bool:
         try:
-            start = datetime.strptime(start_date, "%Y-%m-%d")
-            end = datetime.strptime(end_date, "%Y-%m-%d")
+            start = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            end = datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
 
             if end < start:
                 return False

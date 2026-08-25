@@ -72,8 +72,11 @@ def test_wrap_none_returns_not_err():
 
 def test_wrap_error_dict_only():
     result = _wrap("test_fn", {"error": "something broke"})
-    assert result.startswith(f"{TOOL_ERR_PREFIX}SERVICE")
+    assert TOOL_ERR_PREFIX not in result
     assert "something broke" in result
+    parsed = json.loads(result)
+    assert parsed["data"] is None
+    assert "Service error for test_fn" in parsed["note"]
 
 
 def test_wrap_dict_with_data_and_error_is_not_err():
@@ -81,8 +84,8 @@ def test_wrap_dict_with_data_and_error_is_not_err():
     assert TOOL_ERR_PREFIX not in result
     parsed = json.loads(result)
     assert parsed["data"] == [1, 2]
-    assert "_warning" in parsed
-    assert "partial failure" in parsed["_warning"]
+    assert "_partial_error" in parsed
+    assert parsed["_error"] == "partial failure"
 
 
 def test_wrap_valid_list():
@@ -288,7 +291,7 @@ def test_manage_portfolio_params(m):
     m.return_value = {"data": "ok"}
     manage_portfolio.func(field="portfolio_value", portfolio={"VCB": 10})
     m.assert_called_once_with(
-        field="portfolio_value", portfolio={"VCB": 10}, tickers=None,
+        field="portfolio_value", portfolio={"VCB": 10},
     )
 
 
@@ -318,6 +321,161 @@ def test_analyze_sector_params(m):
 
 
 # ---------------------------------------------------------------------------
+# CustomToolNode.execute_one — reusable dedup/cache/retry
+# ---------------------------------------------------------------------------
+
+
+class _MockTool:
+    def __init__(self, name: str, result: str):
+        self.name = name
+        self._result = result
+
+    def invoke(self, args: dict) -> str:
+        return self._result
+
+
+class _ErrTool:
+    def __init__(self, name: str):
+        self.name = name
+
+    def invoke(self, args: dict) -> str:
+        raise RuntimeError("connection refused")
+
+
+class TestExecuteOne:
+    """Unit tests for CustomToolNode.execute_one().
+
+    Tests the dedup/cache/retry logic in isolation, without LangGraph.
+    """
+
+    # -- fixtures -------------------------------------------------------
+
+    @pytest.fixture
+    def node(self):
+        from application.agents.custom_tool_node import CustomToolNode
+        node = CustomToolNode([_MockTool("test_tool", '{"price": 100}')])
+        return node
+
+    @pytest.fixture
+    def err_node(self):
+        from application.agents.custom_tool_node import CustomToolNode
+        node = CustomToolNode([_ErrTool("broken_tool")])
+        return node
+
+    @pytest.fixture
+    def tc(self):
+        return {"name": "test_tool", "args": {"ticker": "VCB"}, "id": "1"}
+
+    @pytest.fixture
+    def empty_state(self):
+        return set(), {}, {}
+
+    # -- first call should execute -------------------------------------
+
+    def test_first_call_executes(self, node, tc):
+        h, c, r = set(), {}, {}
+        content = node.execute_one(tc, h, c, r)
+
+        assert '{"price": 100}' in content
+        assert len(h) == 1
+        assert "test_tool|" in next(iter(h))
+        assert list(c.values())[0] == content
+        assert list(r.values())[0] == 0
+
+    # -- duplicate call returns cached ---------------------------------
+
+    def test_duplicate_call_returns_cached(self, node, tc):
+        h, c, r = set(), {}, {}
+        first = node.execute_one(tc, h, c, r)
+
+        # Second call with same args — should return cached, not re-execute
+        second = node.execute_one(tc, h, c, r)
+
+        assert first == second
+        assert len(h) == 1  # still only 1 fingerprint
+
+    # -- error retries up to MAX_RETRIES --------------------------------
+
+    def test_error_retry(self, err_node):
+        from application.agents.custom_tool_node import _MAX_RETRIES
+        tc = {"name": "broken_tool", "args": {}, "id": "2"}
+        h, c, r = set(), {}, {}
+
+        # First call → error
+        content1 = err_node.execute_one(tc, h, c, r)
+        assert "TOOL_ERR#" in content1
+        assert r[next(iter(h))] == 0
+
+        # Second call → retry (first retry)
+        content2 = err_node.execute_one(tc, h, c, r)
+        assert "TOOL_ERR#" in content2
+        assert r[next(iter(h))] == 1
+
+        # Third call → retry (second retry)
+        content3 = err_node.execute_one(tc, h, c, r)
+        assert "TOOL_ERR#" in content3
+        assert r[next(iter(h))] == 2
+
+        # Fourth call → retries exhausted → cached error
+        content4 = err_node.execute_one(tc, h, c, r)
+        assert content4 == content3  # same as last retry
+        assert r[next(iter(h))] == _MAX_RETRIES  # not incremented
+
+    # -- unknown tool ---------------------------------------------------
+
+    def test_unknown_tool(self, node):
+        tc = {"name": "nonexistent", "args": {}, "id": "3"}
+        h, c, r = set(), {}, {}
+        content = node.execute_one(tc, h, c, r)
+        assert content.startswith("TOOL_ERR#UNKNOWN")
+        assert "nonexistent" in content
+
+    # -- multiple distinct tool calls ----------------------------------
+
+    def test_multiple_distinct_calls(self, node, tc):
+        h, c, r = set(), {}, {}
+        tc2 = {"name": "test_tool", "args": {"ticker": "VNM"}, "id": "2"}
+
+        content1 = node.execute_one(tc, h, c, r)
+        content2 = node.execute_one(tc2, h, c, r)
+
+        assert content1 == content2  # same tool, same result
+        assert len(h) == 2  # two different fingerprints (different args)
+
+    # -- cache hit preserves across multiple calls --------------------
+
+    def test_cache_hit_no_reinvoke(self, node, tc):
+        h, c, r = set(), {}, {}
+        invoke_count = 0
+
+        original_invoke = node._execute
+        def counting_execute(tc):
+            nonlocal invoke_count
+            invoke_count += 1
+            return original_invoke(tc)
+
+        node._execute = counting_execute
+
+        node.execute_one(tc, h, c, r)  # 1 invoke
+        node.execute_one(tc, h, c, r)  # cached
+        node.execute_one(tc, h, c, r)  # cached
+
+        assert invoke_count == 1
+
+    # -- empty tool_call_history cache ----------------------------------
+
+    def test_empty_history_does_not_fingerprint_collide(self, node):
+        h, c, r = set(), {}, {}
+        tc_a = {"name": "test_tool", "args": {"ticker": "VCB"}, "id": "1"}
+        tc_b = {"name": "test_tool", "args": {"ticker": "VNM"}, "id": "2"}
+
+        node.execute_one(tc_a, h, c, r)
+        node.execute_one(tc_b, h, c, r)
+
+        assert len(h) == 2
+
+
+# ---------------------------------------------------------------------------
 # Empty / edge-case tool calls
 # ---------------------------------------------------------------------------
 
@@ -325,28 +483,38 @@ def test_analyze_sector_params(m):
 @patch("application.agents.tool_registry.handle_price_query", return_value={"error": "Missing ticker"})
 def test_get_stock_price_empty_tickers(m):
     result = get_stock_price.func(tickers=[])
-    assert TOOL_ERR_PREFIX in result
+    assert TOOL_ERR_PREFIX not in result
+    parsed = json.loads(result)
+    assert "Missing ticker" in str(parsed)
 
 
 @patch("application.agents.tool_registry.handle_indicator_query", return_value={"error": "Missing ticker"})
 def test_calculate_technical_indicator_empty_tickers(m):
     result = calculate_technical_indicator.func(tickers=[])
-    assert TOOL_ERR_PREFIX in result
+    assert TOOL_ERR_PREFIX not in result
+    parsed = json.loads(result)
+    assert "Missing ticker" in str(parsed)
 
 
 @patch("application.agents.tool_registry.handle_compare_query", return_value={"error": "Missing ticker"})
 def test_compare_stocks_empty_tickers(m):
     result = compare_stocks.func(tickers=[], compare_with=["VNM"])
-    assert TOOL_ERR_PREFIX in result
+    assert TOOL_ERR_PREFIX not in result
+    parsed = json.loads(result)
+    assert "Missing ticker" in str(parsed)
 
 
 @patch("application.agents.tool_registry.handle_compare_query", return_value={"error": "Missing compare_with"})
 def test_compare_stocks_empty_compare_with(m):
     result = compare_stocks.func(tickers=["VCB"], compare_with=[])
-    assert TOOL_ERR_PREFIX in result
+    assert TOOL_ERR_PREFIX not in result
+    parsed = json.loads(result)
+    assert "Missing compare_with" in str(parsed)
 
 
 @patch("application.agents.tool_registry.handle_forecast_query", return_value={"error": "Missing ticker"})
 def test_forecast_empty_tickers(m):
     result = forecast_stock_price.func(tickers=[])
-    assert TOOL_ERR_PREFIX in result
+    assert TOOL_ERR_PREFIX not in result
+    parsed = json.loads(result)
+    assert "Missing ticker" in str(parsed)

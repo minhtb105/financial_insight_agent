@@ -1,0 +1,18 @@
+{
+  "pinned_at": "rescore-20260825-043846",
+  "source_report": "F:\\financial_insight_agent\\evals\\reports\\benchmark-rescore-20260825-043846",
+  "aggregate": {
+    "faithfulness": 0.6002,
+    "answer_relevancy": 0.1998,
+    "context_precision": 0.5,
+    "context_recall": 0.5,
+    "tool_precision": 0.8676,
+    "tool_recall": 0.7794,
+    "citation_rate": 0.0556,
+    "numeric_match_rate": 0.375,
+    "edge_pass_rate": 1.0,
+    "latency_p50_ms": 6112.91,
+    "latency_p95_ms": 13500.64,
+    "avg_tokens_per_case": 4193
+  }
+}

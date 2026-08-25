@@ -158,6 +158,13 @@ def handle_indicator_query(
     )
 
 
+def _fmt_date(value: Any) -> str:
+    """Normalize date cell (str or datetime-like) to YYYY-MM-DD."""
+    if isinstance(value, str):
+        return value[:10]
+    return pd.Timestamp(value).strftime("%Y-%m-%d")
+
+
 def calculate_sma(data: pd.DataFrame, period: int) -> list[dict[str, Any]]:
     """Tính đường trung bình động đơn giản (SMA) từ dữ liệu giá.
 
@@ -177,7 +184,7 @@ def calculate_sma(data: pd.DataFrame, period: int) -> list[dict[str, Any]]:
     result = []
     for date, sma in zip(data["date"], sma_values, strict=False):
         if pd.notna(sma):
-            result.append({"date": date.strftime("%Y-%m-%d"), "sma": float(sma)})
+            result.append({"date": _fmt_date(date), "sma": float(sma)})
 
     return result
 
@@ -208,7 +215,7 @@ def calculate_rsi(data: pd.DataFrame, period: int = 14) -> list[dict[str, Any]]:
     result = []
     for date, rsi_val in zip(data["date"], rsi, strict=False):
         if pd.notna(rsi_val):
-            result.append({"date": date.strftime("%Y-%m-%d"), "rsi": float(rsi_val)})
+            result.append({"date": _fmt_date(date), "rsi": float(rsi_val)})
 
     return result
 
@@ -244,7 +251,7 @@ def calculate_macd(
         has_signal = pd.notna(signal_line.iloc[i])
         has_histogram = pd.notna(histogram.iloc[i])
         if has_macd or has_signal or has_histogram:
-            entry: dict[str, Any] = {"date": date.strftime("%Y-%m-%d")}
+            entry: dict[str, Any] = {"date": _fmt_date(date)}
             if has_macd:
                 entry["macd"] = float(macd_line.iloc[i])
             if has_signal:

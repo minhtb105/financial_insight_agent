@@ -7,6 +7,7 @@ from langchain_groq import ChatGroq
 
 from infrastructure.observability import get_logger
 from infrastructure.observability.logging.logger import request_id_var
+from infrastructure.observability.tracing import SpanKind, get_tracer
 from infrastructure.resilience.circuit_breaker import LLMUnavailableError, create_circuit_breaker
 
 _RETRYABLE_ERRORS = frozenset({
@@ -78,7 +79,7 @@ class LLMChain:
             return "auth"
         return "unknown"
 
-    def _try_provider(self, provider_name: str, llm, cb, messages, kwargs, rid: str):
+    def _try_provider(self, provider_name: str, llm, cb, messages, kwargs, rid: str):  # noqa: PLR0917
         """Try a single provider. Returns (result, error) tuple."""
         try:
             start = time.time()
@@ -120,20 +121,39 @@ class LLMChain:
         rid = request_id_var.get() or "unknown"
         last_error = None
 
-        openai_kwargs = self._filter_kwargs(kwargs, self._openai_kwarg_keys)
-        groq_kwargs = self._filter_kwargs(kwargs, self._groq_kwarg_keys)
+        tracer = get_tracer()
+        with tracer.start_span(
+            "llm_provider.chain", SpanKind.LLM,
+            attributes={"request_id": rid, "label": self._label},
+            inputs={"message_count": len(messages)},
+        ) as span:
+            openai_kwargs = self._filter_kwargs(kwargs, self._openai_kwarg_keys)
+            groq_kwargs = self._filter_kwargs(kwargs, self._groq_kwarg_keys)
 
-        if self._primary and self._openai_cb.acquire_permit():
-            result, err = self._try_provider("openai", self._primary, self._openai_cb, messages, openai_kwargs, rid)
-            if err is None:
-                return result
-            last_error = err
+            if self._primary and self._openai_cb.acquire_permit():
+                result, err = self._try_provider("openai", self._primary, self._openai_cb, messages, openai_kwargs, rid)
+                if err is None:
+                    if span is not None:
+                        span.provider = "openai"
+                        span.model = getattr(self._primary, "model_name", None) or getattr(self._primary, "model", None)
+                        span.attributes["fallback_used"] = False
+                    return result
+                last_error = err
+                if span is not None:
+                    span.attributes["openai_error"] = f"{type(err).__name__}: {err}"
 
-        if self._fallback and self._groq_cb.acquire_permit():
-            result, err = self._try_provider("groq", self._fallback, self._groq_cb, messages, groq_kwargs, rid)
-            if err is None:
-                return result
-            last_error = err
+            if self._fallback and self._groq_cb.acquire_permit():
+                result, err = self._try_provider("groq", self._fallback, self._groq_cb, messages, groq_kwargs, rid)
+                if err is None:
+                    if span is not None:
+                        span.provider = "groq"
+                        span.model = getattr(self._fallback, "model_name", None)
+                        span.attributes["fallback_used"] = True
+                    return result
+                last_error = err
+
+            if span is not None and last_error is not None:
+                span.attributes["all_providers_failed"] = True
 
         if last_error:
             raise last_error
@@ -145,7 +165,7 @@ class LLMChain:
 class LLMProvider:
     def __init__(self):
         load_dotenv()
-        self._chain_cache: dict[str, "LLMChain"] = {}
+        self._chain_cache: dict[str, LLMChain] = {}
 
         openai_api_key = os.getenv("OPENAI_API_KEY")
         groq_api_key = os.getenv("GROQ_API_KEY")
@@ -238,7 +258,7 @@ class LLMProvider:
 
         return self._make_chain(primary, fallback_llm, "structured")
 
-    def get_tool_calling_llm(self, tools, **kwargs):
+    def get_tool_calling_llm(self, tools, **kwargs):  # noqa: ARG002 — API-compat passthrough
         if self._primary is None and self._fallback is None:
             raise LLMUnavailableError(
                 "No LLM providers available: both OPENAI_API_KEY and GROQ_API_KEY are missing"

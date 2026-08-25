@@ -10,6 +10,7 @@ lives in pipeline.py and its companion guardrail modules.
 """
 
 import re
+import math
 import logging
 from typing import Any
 from collections.abc import Sequence
@@ -59,9 +60,16 @@ class OutputGuardrails:
     def _get_default_config(self) -> dict[str, Any]:
         return {
             "financial_bounds": {
-                "pe_ratio": {"min": 0, "max": 1000},
-                "price": {"min": 0, "max": 1000000},
-                "volume": {"min": 0, "max": 1000000000},
+                "pe_ratio": {"min": 0, "max": 100, "threshold": "strict"},
+                "pb_ratio": {"min": 0, "max": 50, "threshold": "strict"},
+                "price": {"min": 0, "max": 1000000, "threshold": "strict"},
+                "volume": {"min": 0, "max": 1000000000, "threshold": "strict"},
+                "roe": {"min": -100, "max": 100, "threshold": "strict"},
+                "eps": {"min": -100000, "max": 1000000, "threshold": "strict"},
+                "debt": {"min": 0, "max": 1000000000000000, "threshold": "loose"},
+                "revenue": {"min": 0, "max": 1000000000000000, "threshold": "loose"},
+                "profit": {"min": -1000000000000000, "max": 1000000000000000, "threshold": "loose"},
+                "default_number": {"min": 0, "max": 1000000000000000, "threshold": "warning"},
             },
             "response_length": {"max": 2000},
             "pii_detection": True,
@@ -115,6 +123,10 @@ class OutputGuardrails:
         anomaly_result = self._detect_anomalies(sanitized_response, original_query)
         if anomaly_result.status == ValidationResult.WARNING:
             issues.extend(anomaly_result.issues)
+
+        bounds_result = self._validate_financial_bounds(sanitized_response)
+        if bounds_result.status in (ValidationResult.FAIL, ValidationResult.WARNING):
+            issues.extend(bounds_result.issues)
 
         has_fail = any(i.level in (GuardrailLevel.CRITICAL, GuardrailLevel.HIGH) for i in issues)
         has_warning = any(i.level == GuardrailLevel.MEDIUM for i in issues)
@@ -241,6 +253,57 @@ class OutputGuardrails:
         return ValidationResultData(
             status=ValidationResult.WARNING if issues else ValidationResult.PASS, issues=issues
         )
+
+    def _validate_financial_bounds(self, response: str) -> ValidationResultData:
+        issues = []
+        bounds = self.config.get("financial_bounds", {})
+        ctx_map = {
+            "pe_ratio": re.compile(r"pe\b|p/e|price.*earnings", re.I),
+            "pb_ratio": re.compile(r"pb\b|p/b|price.*book", re.I),
+            "roe": re.compile(r"roe\b|return.*equity", re.I),
+            "eps": re.compile(r"eps\b|earning.*share", re.I),
+            "price": re.compile(r"giá\b|gia\b|price|th[\S]? giá|trị giá", re.I),
+            "volume": re.compile(r"kh[\S]?i lư[ơo]ng|volume|thanh khoản", re.I),
+            "debt": re.compile(r"n[\S]?\b|debt|liabilities", re.I),
+            "revenue": re.compile(r"doanh thu|revenue|turnover", re.I),
+            "profit": re.compile(r"l[\S]?i nhu[\S]?n|profit|earnings|lãi", re.I),
+        }
+        num_pat = re.compile(r"(\d[\d,]*\.?\d*)")
+        for match in num_pat.finditer(response):
+            raw = match.group(1).replace(",", "")
+            try:
+                val = float(raw)
+            except ValueError:
+                continue
+            start = max(0, match.start() - 80)
+            end = min(len(response), match.end() + 20)
+            context = response[start:end]
+            bound_key = "default_number"
+            for bk, pat in ctx_map.items():
+                if pat.search(context):
+                    bound_key = bk
+                    break
+            bound = bounds.get(bound_key, bounds.get("default_number", {}))
+            bmin = bound.get("min", 0)
+            bmax = bound.get("max", 1e15)
+            threshold = bound.get("threshold", "warning")
+            if val < bmin or val > bmax:
+                level = GuardrailLevel.HIGH if threshold == "strict" else GuardrailLevel.MEDIUM
+                issues.append(
+                    ValidationIssue(
+                        level=level,
+                        code="FINANCIAL_BOUNDS",
+                        message=f"Number {val:,.0f} exceeds {bound_key} bounds [{bmin:,.0f}, {bmax:,.0f}]",
+                        field=bound_key,
+                        value=val,
+                    )
+                )
+        if issues:
+            status = ValidationResult.FAIL if any(
+                i.level == GuardrailLevel.HIGH for i in issues
+            ) else ValidationResult.WARNING
+            return ValidationResultData(status=status, issues=issues)
+        return ValidationResultData(status=ValidationResult.PASS, issues=issues)
 
     def _redact_pii(self, text: str) -> str:
         text = re.sub(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", "[REDACTED_EMAIL]", text)

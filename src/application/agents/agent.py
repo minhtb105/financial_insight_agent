@@ -3,7 +3,7 @@ True tool-calling agent for Vietnamese stock market analysis.
 
 Architecture:
   HumanMessage → [HybridQuerySplitter] → sub-queries
-  Each sub-query:  agent_node ↔ tools ↔ agent_node  (ReAct loop)
+  Each sub-query:  reason_node ↔ action_node ↔ reason_node  (ReAct loop via next_tool_call handshake)
   Results merged → final_answer_node → guardrails
 
 The LLM autonomously decides which tools to call and what arguments to pass.
@@ -12,12 +12,14 @@ No deterministic classifier / extractor pipeline is involved.
 
 import time
 import uuid
+import json
+from datetime import datetime, timezone
 from dotenv import load_dotenv
-from typing import TypedDict, Annotated, Literal
+from typing import TypedDict, Annotated, Literal, Optional
 from collections.abc import Sequence
 from langgraph.graph import StateGraph, END
-from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.memory import MemorySaver
+from application.agents.custom_tool_node import CustomToolNode
 from langchain_core.messages import (
     HumanMessage,
     AIMessage,
@@ -30,10 +32,12 @@ from langgraph.graph.message import add_messages
 from infrastructure.llm.llm_provider import LLMProvider, LLMUnavailableError
 from infrastructure.observability import get_logger
 from infrastructure.observability.logging.logger import request_id_var
+from infrastructure.observability.tracing import SpanKind, TracingCallbackHandler, get_tracer
 from application.agents.tool_registry import ALL_TOOLS
 from application.agents.hybrid_splitter import HybridQuerySplitter
 from application.agents.multi_query_runner import run_queries_parallel
 from application.agents.response_synthesizer import ResponseSynthesizer
+from application.agents.fact_verifier import FactVerifier
 from infrastructure.guardrails.output_guardrails import get_output_guardrails
 from infrastructure.memory.memory_manager import get_memory_manager
 from shared.utils.env_helpers import parse_int_env
@@ -44,16 +48,6 @@ logger = get_logger("agent.StockAgent")
 MAX_ITERATIONS = parse_int_env("AGENT_MAX_ITERATIONS", 10)
 AGENT_TIMEOUT_SECONDS = parse_int_env("AGENT_TIMEOUT_SECONDS", 120)
 
-SYSTEM_PROMPT = """You are a professional stock analysis assistant for the Vietnamese market.
-
-You have tools to query real data. Follow these rules:
-1. Analyze the question and decide which tool to call with what arguments.
-2. If multiple data is needed, call multiple tools in parallel or sequentially.
-3. After receiving results, synthesize a clear answer in Vietnamese.
-4. Include specific numbers and figures when data is available.
-5. If the question is ambiguous (missing ticker, threshold, etc.), ask the user for clarification.
-6. If a tool returns an error (prefixed with TOOL_ERR#), explain the error to the user and stop."""
-
 
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
@@ -61,6 +55,10 @@ class AgentState(TypedDict):
     original_query: str
     request_id: str
     memory_context: str
+    tool_call_history: list[str]
+    tool_call_cache: dict[str, str]
+    tool_call_retries: dict[str, int]
+    next_tool_call: Optional[list]  # explicit handoff: reason_node → action_node
 
 
 class StockAgent:
@@ -68,7 +66,7 @@ class StockAgent:
         load_dotenv()
 
         self.tools = ALL_TOOLS
-        self.tool_node = ToolNode(self.tools)
+        self.tool_node = CustomToolNode(self.tools)
         try:
             self.llm_provider = LLMProvider()
             self.splitter = HybridQuerySplitter(llm_provider=self.llm_provider)
@@ -88,20 +86,23 @@ class StockAgent:
             self._synthesizer = None
 
         self._output_guardrails = get_output_guardrails()
+        self._fact_verifier = FactVerifier(confidence_threshold=0.8)
 
         graph = StateGraph(AgentState)
-        graph.add_node("agent", self._agent_node)
-        graph.add_node("tools", self.tool_node)
+        graph.add_node("reason", self._reason_node)
+        graph.add_node("action", self._action_node)
         graph.add_node("final_answer", self._final_answer_node)
+        graph.add_node("verify_facts", self._verify_facts_node)
 
-        graph.set_entry_point("agent")
+        graph.set_entry_point("reason")
         graph.add_conditional_edges(
-            "agent",
+            "reason",
             self._should_continue,
-            {"continue": "tools", "end": "final_answer"},
+            {"continue": "action", "end": "final_answer"},
         )
-        graph.add_edge("tools", "agent")
-        graph.add_edge("final_answer", END)
+        graph.add_edge("action", "reason")
+        graph.add_edge("final_answer", "verify_facts")
+        graph.add_edge("verify_facts", END)
 
         self.app = graph.compile(checkpointer=MemorySaver(), interrupt_before=None)
 
@@ -139,11 +140,49 @@ class StockAgent:
         return None
 
     @staticmethod
-    def _build_messages(state: AgentState) -> list:
+    def _build_temporal_context(messages: list, current_date: str) -> str | None:
+        tool_msgs = [m for m in messages if isinstance(m, ToolMessage)]
+        if not tool_msgs:
+            return None
+        tickers_seen = {}
+        for tm in tool_msgs:
+            try:
+                data = json.loads(tm.content) if isinstance(tm.content, str) else tm.content
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if isinstance(data, dict):
+                for key, val in data.items():
+                    if isinstance(val, dict):
+                        t = val.get("ticker") or key
+                        end = val.get("end_date") or val.get("end")
+                        if end:
+                            tickers_seen[t.upper()] = end
+        if not tickers_seen:
+            return None
+        lines = [f"Mốc thời gian dữ liệu ({current_date}):"]
+        for t, end in sorted(tickers_seen.items()):
+            lines.append(f"- {t}: số liệu mới nhất ngày {end}")
+        lines.append("Chỉ sử dụng số liệu từ tool. KHÔNG dùng kiến thức huấn luyện.")
+        return "\n".join(lines)
+
+    def _build_messages(self, state: AgentState) -> list:
+        from application.prompts import PromptRegistryError, get_registry
+
         messages = list(state["messages"])
         memory_context = state.get("memory_context", "")
+        current_date = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+        temporal_ctx = self._build_temporal_context(messages, current_date)
+        if temporal_ctx:
+            messages.append(SystemMessage(content=temporal_ctx))
+
         if not any(isinstance(m, SystemMessage) for m in messages):
-            content = SYSTEM_PROMPT
+            try:
+                system_text = get_registry().render("agent_system").text
+            except PromptRegistryError:
+                logger.exception("agent_system prompt render failed — using empty fallback")
+                system_text = "You are a professional stock analysis assistant."
+            content = f"Current date: {current_date}\n\n{system_text}"
             if memory_context:
                 content = f"{content}\n\nContext from past interactions:\n{memory_context}"
             messages = [SystemMessage(content=content), *messages]
@@ -172,19 +211,19 @@ class StockAgent:
             )
             return None, e
 
-    def _agent_node(self, state: AgentState) -> dict:
-        node_logger = get_logger("agent.agent_node")
+    def _reason_node(self, state: AgentState) -> dict:
+        node_logger = get_logger("agent.reason_node")
         rid = state.get("request_id") or request_id_var.get() or "unknown"
         start = time.time()
         iterations = state.get("iterations", 0)
 
         early = self._check_llm_available(node_logger, rid, iterations)
         if early:
-            return early
+            return {**early, "next_tool_call": None}
 
         early = self._check_max_iterations(node_logger, rid, iterations)
         if early:
-            return early
+            return {**early, "next_tool_call": None}
 
         messages = self._build_messages(state)
         response, err = self._invoke_llm(node_logger, messages, rid)
@@ -196,12 +235,13 @@ class StockAgent:
                     )
                 ],
                 "iterations": iterations,
+                "next_tool_call": None,
             }
 
         tool_calls_made = bool(response.tool_calls)
         tool_names = [t["name"] for t in (response.tool_calls or [])]
         node_logger.info(
-            "Agent node completed",
+            "Reason node completed",
             extra={
                 "request_id": rid,
                 "has_tool_calls": tool_calls_made,
@@ -209,7 +249,46 @@ class StockAgent:
                 "duration_ms": round((time.time() - start) * 1000, 2),
             },
         )
-        return {"messages": [response], "iterations": iterations + (1 if tool_calls_made else 0)}
+        return {
+            "messages": [response],
+            "iterations": iterations + (1 if tool_calls_made else 0),
+            "next_tool_call": response.tool_calls if response.tool_calls else None,
+        }
+
+    def _action_node(self, state: AgentState) -> dict:
+        node_logger = get_logger("agent.action_node")
+        rid = state.get("request_id") or request_id_var.get() or "unknown"
+
+        tool_calls = state.get("next_tool_call", None)
+        if not tool_calls:
+            return {"messages": [], "next_tool_call": None}
+
+        history: set[str] = set(state.get("tool_call_history", []))
+        cache: dict[str, str] = dict(state.get("tool_call_cache", {}))
+        retries: dict[str, int] = dict(state.get("tool_call_retries", {}))
+
+        tool_messages: list[ToolMessage] = []
+        for tc in tool_calls:
+            tool_call_id = tc.get("id", "")
+            tool_name = tc.get("name", "")
+            content = self.tool_node.execute_one(tc, history, cache, retries)
+            tool_messages.append(
+                ToolMessage(content=content, tool_call_id=tool_call_id, name=tool_name)
+            )
+
+        node_logger.info(
+            "Action node completed, executed %d tool(s) from next_tool_call",
+            len(tool_calls),
+            extra={"request_id": rid},
+        )
+
+        return {
+            "messages": tool_messages,
+            "next_tool_call": None,
+            "tool_call_history": list(history),
+            "tool_call_cache": cache,
+            "tool_call_retries": retries,
+        }
 
     def _final_answer_node(self, state: AgentState) -> dict:
         node_logger = get_logger("agent.final_answer")
@@ -239,6 +318,9 @@ class StockAgent:
 
         response = last_ai
 
+        if self._output_guardrails is None:
+            return {"messages": [response]}
+
         validation_result = self._output_guardrails.validate_response(response.content, original_query)
 
         if validation_result.status == "FAIL":
@@ -264,13 +346,61 @@ class StockAgent:
 
         return {"messages": [response]}
 
+    def _verify_facts_node(self, state: AgentState) -> dict:
+        node_logger = get_logger("agent.verify_facts")
+        rid = state.get("request_id") or request_id_var.get() or "unknown"
+        messages = state.get("messages", [])
+        original_query = state.get("original_query", "")
+
+        last_ai: AIMessage | None = None
+        for m in reversed(messages):
+            if isinstance(m, AIMessage) and not m.tool_calls:
+                last_ai = m
+                break
+
+        if not last_ai:
+            return {"messages": []}
+
+        result = self._fact_verifier.verify(
+            response=last_ai.content,
+            messages=messages,
+            original_query=original_query,
+        )
+
+        confidence = result.get("confidence", 1.0)
+        issues = result.get("issues", [])
+        total_citations = result.get("total_citations", 0)
+
+        node_logger.info(
+            "Fact verification result",
+            extra={
+                "request_id": rid,
+                "mode": result.get("mode", "none"),
+                "confidence": confidence,
+                "verified": result.get("verified", False),
+                "issues": len(issues),
+                "total_citations": total_citations,
+            },
+        )
+
+        if not result["verified"]:
+            if issues:
+                summary = "\n".join(i["message"] for i in issues[:3])
+                warning = (
+                    f"\n\n⚠️ Cảnh báo: Một số số liệu cần kiểm tra lại:\n{summary}"
+                )
+                return {"messages": [AIMessage(content=last_ai.content + warning)]}
+            return {"messages": [AIMessage(content=last_ai.content)]}
+
+        if total_citations > 0 and confidence < 1.0:
+            score = f"\n\n📊 Độ tin cậy: {int(confidence * 100)}% ({result.get('verified_count')}/{total_citations} số liệu đã xác thực)"
+            return {"messages": [AIMessage(content=last_ai.content + score)]}
+
+        return {"messages": []}
+
     @staticmethod
     def _should_continue(state: AgentState) -> Literal["continue", "end"]:
-        messages = state["messages"]
-        if not messages:
-            return "end"
-        last = messages[-1]
-        if isinstance(last, AIMessage) and last.tool_calls:
+        if state.get("next_tool_call"):
             return "continue"
         return "end"
 
@@ -326,6 +456,12 @@ class StockAgent:
     def _run_single(self, query: str, rid: str, memory_context: str = "") -> str:
         with suppress(Exception):
             request_id_var.set(rid)
+        tracer = get_tracer()
+        handler = TracingCallbackHandler(tracer) if tracer.enabled else None
+        stream_config = (
+            {"callbacks": [handler], "configurable": {"thread_id": rid}}
+            if handler else None
+        )
         try:
             init_state: AgentState = {
                 "messages": [HumanMessage(content=query)],
@@ -333,10 +469,14 @@ class StockAgent:
                 "original_query": query,
                 "request_id": rid,
                 "memory_context": memory_context,
+                "tool_call_history": [],
+                "tool_call_cache": {},
+                "tool_call_retries": {},
+                "next_tool_call": None,
             }
             final_response = ""
             deadline = time.time() + AGENT_TIMEOUT_SECONDS
-            for step in self.app.stream(init_state, stream_mode="values"):
+            for step in self.app.stream(init_state, config=stream_config, stream_mode="values"):
                 if time.time() > deadline:
                     logger.warning(
                         "Agent execution timed out",
@@ -362,9 +502,13 @@ class StockAgent:
             with suppress(Exception):
                 request_id_var.set(None)
 
-    def _execute_graph(self, query: str, rid: str) -> str:
+    def _execute_graph(self, query: str, rid: str, trace_span=None) -> str:
         try:
             memory_context, sub_queries = self._prepare_and_split(query)
+
+            if trace_span is not None:
+                trace_span.attributes["num_sub_queries"] = len(sub_queries)
+                trace_span.attributes["sub_queries"] = sub_queries
 
             if len(sub_queries) <= 1:
                 result = self._run_single(query, rid, memory_context=memory_context)
@@ -417,21 +561,30 @@ class StockAgent:
         rid = self._resolve_request_id(request_id)
         with suppress(Exception):
             request_id_var.set(rid)
-        start_time = time.time()
+        tracer = get_tracer()
         try:
-            result = self._execute_graph(query, rid)
-            return result
+            with tracer.start_span(
+                "agent.run", SpanKind.AGENT,
+                attributes={"request_id": rid}, inputs={"query": query},
+            ) as span:
+                start_time = time.time()
+                try:
+                    result = self._execute_graph(query, rid, trace_span=span)
+                    if span is not None:
+                        span.outputs = {"answer": str(result)[:4000]}
+                    return result
+                finally:
+                    latency = time.time() - start_time
+                    logger.info(
+                        "Agent run complete",
+                        extra={
+                            "request_id": rid,
+                            "latency_ms": round(latency * 1000, 2),
+                        },
+                    )
         finally:
             with suppress(Exception):
                 request_id_var.set(None)
-            latency = time.time() - start_time
-            logger.info(
-                "Agent run complete",
-                extra={
-                    "request_id": rid,
-                    "latency_ms": round(latency * 1000, 2),
-                },
-            )
 
     def _run_single_stream(self, query: str, rid: str, memory_context: str = ""):
         try:
@@ -444,18 +597,28 @@ class StockAgent:
                     "error": str(exc),
                 },
             )
+        tracer = get_tracer()
+        handler = TracingCallbackHandler(tracer) if tracer.enabled else None
+        stream_config = (
+            {"callbacks": [handler], "configurable": {"thread_id": rid}}
+            if handler else None
+        )
         init_state: AgentState = {
             "messages": [HumanMessage(content=query)],
             "iterations": 0,
             "original_query": query,
             "request_id": rid,
             "memory_context": memory_context,
+            "tool_call_history": [],
+            "tool_call_cache": {},
+            "tool_call_retries": {},
+            "next_tool_call": None,
         }
         _STREAM_EVENT_LIMIT = 5000
         event_count = 0
         deadline = time.time() + AGENT_TIMEOUT_SECONDS
         try:
-            for event in self.app.stream(init_state, stream_mode="messages"):
+            for event in self.app.stream(init_state, config=stream_config, stream_mode="messages"):
                 if time.time() > deadline:
                     logger.warning(
                         "Stream execution timed out",
@@ -490,43 +653,60 @@ class StockAgent:
         rid = self._resolve_request_id(request_id)
         with suppress(Exception):
             request_id_var.set(rid)
+        tracer = get_tracer()
         try:
-            start_time = time.time()
+            with tracer.start_span(
+                "agent.stream", SpanKind.AGENT,
+                attributes={"request_id": rid}, inputs={"query": query},
+            ) as span:
+                start_time = time.time()
+                collected: list[str] = []
+                memory_context, sub_queries = self._prepare_and_split(query)
+                if span is not None:
+                    span.attributes["num_sub_queries"] = len(sub_queries)
+                    span.attributes["sub_queries"] = sub_queries
 
-            memory_context, sub_queries = self._prepare_and_split(query)
+                if len(sub_queries) <= 1:
+                    try:
+                        for token in self._run_single_stream(query, rid, memory_context=memory_context):
+                            if token:
+                                collected.append(token)
+                                yield token
+                    except GeneratorExit:
+                        if span is not None:
+                            span.outputs = {"answer": "".join(collected)[:1000]}
+                        return
+                    except Exception as e:
+                        logger.exception(
+                            "Agent streaming failed",
+                            extra={
+                                "request_id": rid,
+                                "error": str(e),
+                            },
+                        )
+                        yield "Xin lỗi, đã xảy ra lỗi khi xử lý yêu cầu. Vui lòng thử lại sau."
+                else:
+                    result = self._execute_graph(query, rid)
+                    collected.append(result)
+                    import re
+                    _WORD_CHUNK_SIZE = 5
+                    words = re.split(r"(\s+)", result)
+                    for i in range(0, len(words), _WORD_CHUNK_SIZE * 2):
+                        chunk = "".join(words[i : i + _WORD_CHUNK_SIZE * 2])
+                        if chunk:
+                            yield chunk
 
-            if len(sub_queries) <= 1:
-                try:
-                    for token in self._run_single_stream(query, rid, memory_context=memory_context):
-                        if token:
-                            yield token
-                except Exception as e:
-                    logger.exception(
-                        "Agent streaming failed",
-                        extra={
-                            "request_id": rid,
-                            "error": str(e),
-                        },
-                    )
-                    yield "Xin lỗi, đã xảy ra lỗi trong quá trình xử lý."
-            else:
-                result = self._execute_graph(query, rid)
-                import re
-                _WORD_CHUNK_SIZE = 5
-                words = re.split(r"(\s+)", result)
-                for i in range(0, len(words), _WORD_CHUNK_SIZE * 2):
-                    chunk = "".join(words[i : i + _WORD_CHUNK_SIZE * 2])
-                    if chunk:
-                        yield chunk
+                if span is not None:
+                    span.outputs = {"answer": "".join(collected)[:1000]}
 
-            latency = time.time() - start_time
-            logger.info(
-                "Agent streaming complete",
-                extra={
-                    "request_id": rid,
-                    "latency_ms": round(latency * 1000, 2),
-                },
-            )
+                latency = time.time() - start_time
+                logger.info(
+                    "Agent streaming complete",
+                    extra={
+                        "request_id": rid,
+                        "latency_ms": round(latency * 1000, 2),
+                    },
+                )
         finally:
             with suppress(Exception):
                 request_id_var.set(None)

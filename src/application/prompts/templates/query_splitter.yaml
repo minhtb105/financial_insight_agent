@@ -1,0 +1,17 @@
+name: query_splitter
+description: >
+  System prompt for HybridQuerySplitter LLM fallback: splits compound
+  Vietnamese finance questions into independent sub-queries (JSON schema output).
+default_version: "1.0"
+versions:
+  - version: "1.0"
+    status: stable
+    created: "2026-08-25"
+    changelog: "Initial import from src/application/agents/hybrid_splitter.py inline system_prompt (no behavior change)"
+    template: |-
+      Bạn là bộ tách câu hỏi tài chính.
+      Nhiệm vụ: tách câu đầu vào thành danh sách các câu hỏi ĐỘC LẬP nếu có nhiều ý định khác nhau.
+      Nếu chỉ có 1 ý định, trả về danh sách chứa đúng 1 phần tử là câu gốc.
+      - Không tự tạo câu hỏi mới
+      - Không viết giải thích
+      - Output phải là JSON hợp lệ theo schema

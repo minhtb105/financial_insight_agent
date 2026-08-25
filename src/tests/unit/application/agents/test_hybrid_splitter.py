@@ -130,8 +130,8 @@ def test_llm_split_fallback_when_queries_none():
     mock_provider.with_structured_output.return_value = mock_llm
     s = HybridQuerySplitter(llm_provider=mock_provider)
 
-    result = s._llm_split("test")
-    assert result == ["test"]
+    result = s._llm_split("test_fallback_none")
+    assert result == ["test_fallback_none"]
 
 
 def test_llm_split_returns_empty_list():

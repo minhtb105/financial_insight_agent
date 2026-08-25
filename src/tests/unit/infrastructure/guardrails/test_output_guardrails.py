@@ -10,7 +10,7 @@ from infrastructure.guardrails.output_guardrails import (
 
 
 def _guardrails():
-    return get_output_guardrails()
+    return OutputGuardrails()
 
 
 def test_output_guardrails_initializes():
@@ -236,6 +236,92 @@ def test_validate_response_long_truncated():
     result = g.validate_response(long_text, "test")
     sanitized = result.processed_query["sanitized_response"]
     assert len(sanitized) <= 2000
+
+
+# -- _validate_financial_bounds --------------------------------------------
+
+
+def test_financial_bounds_pe_within_bounds():
+    g = _guardrails()
+    result = g._validate_financial_bounds("P/E của VCB là 15")
+    assert result.status == ValidationResult.PASS
+
+
+def test_financial_bounds_pe_outlier():
+    g = _guardrails()
+    result = g._validate_financial_bounds("P/E của VCB là 999")
+    assert result.status == ValidationResult.FAIL
+    assert any(i.code == "FINANCIAL_BOUNDS" for i in result.issues)
+    assert any("pe_ratio" in (i.field or "") for i in result.issues)
+
+
+def test_financial_bounds_price_exceeds_max():
+    g = _guardrails()
+    result = g._validate_financial_bounds("giá cổ phiếu là 2000000 VND")
+    assert result.status == ValidationResult.FAIL
+    assert any("price" in (i.field or "") for i in result.issues)
+
+
+def test_financial_bounds_pb_outlier():
+    g = _guardrails()
+    result = g._validate_financial_bounds("P/B của VCB là 100, vượt quá xa ngưỡng")
+    assert result.status == ValidationResult.FAIL
+    assert any("pb_ratio" in (i.field or "") for i in result.issues)
+
+
+def test_financial_bounds_roe_outlier():
+    g = _guardrails()
+    result = g._validate_financial_bounds("ROE của VNM là 150%")
+    assert result.status == ValidationResult.FAIL
+    assert any("roe" in (i.field or "") for i in result.issues)
+
+
+def test_financial_bounds_eps_outlier():
+    g = _guardrails()
+    result = g._validate_financial_bounds("EPS của VCB là 5000000")
+    assert result.status == ValidationResult.FAIL
+    assert any("eps" in (i.field or "") for i in result.issues)
+
+
+def test_financial_bounds_volume_within_bounds():
+    g = _guardrails()
+    result = g._validate_financial_bounds("khối lượng giao dịch VCB là 500000")
+    assert result.status == ValidationResult.PASS
+
+
+def test_financial_bounds_pb_within_bounds():
+    g = _guardrails()
+    result = g._validate_financial_bounds("P/B của VCB là 2.5")
+    assert result.status == ValidationResult.PASS
+
+
+def test_financial_bounds_normal_text():
+    g = _guardrails()
+    result = g._validate_financial_bounds("VCB có lợi nhuận tăng trưởng tốt")
+    assert result.status == ValidationResult.PASS
+
+
+# -- _detect_pii edge cases ------------------------------------------------
+
+
+def test_detect_pii_vietnam_id():
+    g = _guardrails()
+    result = g._detect_pii("CCCD: 079201012345")
+    assert result.status == ValidationResult.FAIL
+    assert any(i.code == "PII_VIETNAM_ID_DETECTED" for i in result.issues)
+
+
+def test_detect_pii_vietnam_id_9_digit():
+    g = _guardrails()
+    result = g._detect_pii("CMND: 123456789")
+    assert result.status == ValidationResult.FAIL
+    assert any(i.code == "PII_VIETNAM_ID_DETECTED" for i in result.issues)
+
+
+def test_detect_pii_email_numeric_tld_skipped():
+    g = _guardrails()
+    result = g._detect_pii("test@domain.123")
+    assert result.status == ValidationResult.PASS
 
 
 # -- singleton -------------------------------------------------------------

@@ -10,8 +10,8 @@ from infrastructure.api_clients.vn_stock_client import VNStockClient
 def test_client_init_default_ticker(mock_quote, mock_company):
     client = VNStockClient()
     assert client.ticker == "VCB"
-    mock_company.assert_called_once_with(symbol="VCB", source="TCBS")
-    mock_quote.assert_called_once_with(symbol="VCB", source="TCBS")
+    mock_company.assert_called_once_with(symbol="VCB", source="KBS")
+    mock_quote.assert_called_once_with(symbol="VCB", source="VCI")
 
 
 @patch("infrastructure.api_clients.vn_stock_client.Company")
@@ -20,6 +20,7 @@ def test_client_init_custom_ticker(mock_quote, mock_company):
     client = VNStockClient(ticker="VNM", source="VCI")
     assert client.ticker == "VNM"
     mock_company.assert_called_once_with(symbol="VNM", source="VCI")
+    mock_quote.assert_called_once_with(symbol="VNM", source="VCI")
 
 
 @patch("infrastructure.api_clients.vn_stock_client.Company")

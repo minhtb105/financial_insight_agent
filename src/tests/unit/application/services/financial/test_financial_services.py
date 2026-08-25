@@ -113,7 +113,7 @@ def test_ranking_single_ticker_returns_error():
     assert "error" in result
 
 
-@patch("application.services.financial.ranking_service.get_price_data")
+@patch("shared.price_data.get_price_data")
 def test_ranking_two_tickers(mock_get_price):
     def side_effect(ticker, *a, **kw):
         return {
@@ -136,7 +136,7 @@ def test_ranking_two_tickers(mock_get_price):
     assert ranking["total_tickers"] == 2
 
 
-@patch("application.services.financial.ranking_service.get_price_data")
+@patch("shared.price_data.get_price_data")
 def test_ranking_ticker_fetch_error(mock_get_price):
     def side_effect(ticker, *a, **kw):
         return {"error": f"No data for {ticker}"}

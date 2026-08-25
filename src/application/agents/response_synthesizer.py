@@ -6,16 +6,19 @@ from infrastructure.llm.llm_provider import LLMProvider
 
 logger = logging.getLogger(__name__)
 
-_SYNTHESIS_PROMPT = (
-    "Bạn là trợ lý tổng hợp dữ liệu chứng khoán.\n"
-    "Nhiệm vụ: Tổng hợp các kết quả phân tích bên dưới thành "
-    "câu trả lời MẠCH LẠC bằng tiếng Việt.\n"
-    "- Giữ nguyên số liệu cụ thể\n"
-    "- Loại bỏ trùng lặp\n"
-    "- Sắp xếp thứ tự hợp lý\n"
-    "- Nếu có dữ liệu không liên quan, bỏ qua\n"
-    "- KHÔNG thêm thông tin không có trong kết quả"
-)
+
+def _get_synthesis_prompt() -> str:
+    from application.prompts import PromptRegistryError, get_registry
+
+    try:
+        return get_registry().render("response_synthesis").text
+    except PromptRegistryError:
+        logger.exception("response_synthesis prompt render failed — using fallback")
+        return (
+            "Bạn là trợ lý tổng hợp dữ liệu chứng khoán. "
+            "Tổng hợp các kết quả bên dưới thành câu trả lời mạch lạc bằng tiếng Việt, "
+            "giữ nguyên số liệu và KHÔNG thêm thông tin mới."
+        )
 
 
 class ResponseSynthesizer:
@@ -36,7 +39,7 @@ class ResponseSynthesizer:
         try:
             resp = self._llm_provider.invoke_with_fallback(
                 [
-                    SystemMessage(content=_SYNTHESIS_PROMPT),
+                    SystemMessage(content=_get_synthesis_prompt()),
                     HumanMessage(
                         content=f"Câu hỏi gốc: {query}\n\nKết quả:\n{combined}"
                     ),

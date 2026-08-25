@@ -18,7 +18,7 @@ def agent_with_mocks():
     with (
         patch("application.agents.agent.LLMProvider") as mock_provider_cls,
         patch("application.agents.agent.ALL_TOOLS", []),
-        patch("application.agents.agent.ToolNode"),
+        patch("application.agents.agent.CustomToolNode"),
         patch("application.agents.agent.ResponseSynthesizer"),
         patch("application.agents.agent.HybridQuerySplitter"),
         patch("application.agents.agent.get_output_guardrails"),
@@ -58,7 +58,7 @@ def test_agent_build_memory_context_no_memory(mock_mem):
     with (
         patch("application.agents.agent.LLMProvider"),
         patch("application.agents.agent.ALL_TOOLS", []),
-        patch("application.agents.agent.ToolNode"),
+        patch("application.agents.agent.CustomToolNode"),
         patch("application.agents.agent.ResponseSynthesizer"),
         patch("application.agents.agent.HybridQuerySplitter"),
     ):
@@ -82,7 +82,7 @@ def test_agent_output_guardrails_sanitizes(mock_guardrails):
     with (
         patch("application.agents.agent.LLMProvider"),
         patch("application.agents.agent.ALL_TOOLS", []),
-        patch("application.agents.agent.ToolNode"),
+        patch("application.agents.agent.CustomToolNode"),
         patch("application.agents.agent.ResponseSynthesizer"),
         patch("application.agents.agent.HybridQuerySplitter"),
     ):

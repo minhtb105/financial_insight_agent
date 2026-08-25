@@ -4,7 +4,9 @@ __all__ = [
     "get_alert_manager",
     "get_logger",
     "get_metrics_collector",
+    "get_tracer",
     "init_observability",
+    "init_tracing",
     "setup_logging",
 ]
 
@@ -19,6 +21,9 @@ def __getattr__(name):
         "get_metrics_collector": ".metrics.collector",
         "AlertManager": ".alerting.manager",
         "get_alert_manager": ".alerting.manager",
+        "Tracer": ".tracing.tracer",
+        "init_tracing": ".tracing.tracer",
+        "get_tracer": ".tracing.tracer",
     }
     if name in _LAZY:
         mod = importlib.import_module(_LAZY[name], __package__)
@@ -30,16 +35,19 @@ def init_observability():
     from .logging.logger import get_logger, setup_logging
     from .metrics.collector import get_metrics_collector
     from .alerting.manager import get_alert_manager
+    from .tracing.tracer import init_tracing
 
     setup_logging()
     metrics_collector = get_metrics_collector()
     alert_manager = get_alert_manager(metrics_collector)
+    tracer = init_tracing()
     logger = get_logger("observability")
     logger.info(
         "Observability initialized",
         extra={
             "metrics_collector": metrics_collector is not None,
             "alert_manager": alert_manager is not None,
+            "tracer_enabled": tracer.enabled,
         },
     )
     return alert_manager

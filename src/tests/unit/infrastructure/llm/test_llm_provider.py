@@ -18,7 +18,7 @@ def test_multi_query_model():
 
 @patch("infrastructure.llm.llm_provider.ChatOpenAI")
 @patch("infrastructure.llm.llm_provider.ChatGroq")
-@patch("infrastructure.llm.llm_provider.CircuitBreaker")
+@patch("infrastructure.llm.llm_provider.create_circuit_breaker")
 @patch("infrastructure.llm.llm_provider.os.getenv")
 def test_llm_provider_init(mock_getenv, mock_cb, mock_groq, mock_openai):
     mock_getenv.return_value = "sk-test-key"
@@ -34,14 +34,14 @@ def test_llm_provider_init(mock_getenv, mock_cb, mock_groq, mock_openai):
 
 @patch("infrastructure.llm.llm_provider.ChatOpenAI")
 @patch("infrastructure.llm.llm_provider.ChatGroq")
-@patch("infrastructure.llm.llm_provider.CircuitBreaker")
+@patch("infrastructure.llm.llm_provider.create_circuit_breaker")
 @patch("infrastructure.llm.llm_provider.os.getenv")
 def test_invoke_with_fallback_primary_succeeds(mock_getenv, mock_cb, mock_groq, mock_openai):
     mock_getenv.return_value = "sk-test-key"
     mock_instance = MagicMock()
     mock_instance.invoke.return_value.content = "OpenAI response"
     mock_openai.return_value = mock_instance
-    mock_cb.return_value.can_execute.return_value = True
+    mock_cb.return_value.acquire_permit.return_value = True
 
     from infrastructure.llm.llm_provider import LLMProvider
 
@@ -55,7 +55,7 @@ def test_invoke_with_fallback_primary_succeeds(mock_getenv, mock_cb, mock_groq, 
 
 @patch("infrastructure.llm.llm_provider.ChatOpenAI")
 @patch("infrastructure.llm.llm_provider.ChatGroq")
-@patch("infrastructure.llm.llm_provider.CircuitBreaker")
+@patch("infrastructure.llm.llm_provider.create_circuit_breaker")
 @patch("infrastructure.llm.llm_provider.os.getenv")
 def test_invoke_with_fallback_fallback_succeeds(mock_getenv, mock_cb, mock_groq, mock_openai):
     mock_getenv.return_value = "sk-test-key"
@@ -66,7 +66,7 @@ def test_invoke_with_fallback_fallback_succeeds(mock_getenv, mock_cb, mock_groq,
     mock_groq_instance = MagicMock()
     mock_groq_instance.invoke.return_value.content = "Groq response"
     mock_groq.return_value = mock_groq_instance
-    mock_cb.return_value.can_execute.return_value = True
+    mock_cb.return_value.acquire_permit.return_value = True
 
     from infrastructure.llm.llm_provider import LLMProvider
 
@@ -80,7 +80,7 @@ def test_invoke_with_fallback_fallback_succeeds(mock_getenv, mock_cb, mock_groq,
 
 @patch("infrastructure.llm.llm_provider.ChatOpenAI")
 @patch("infrastructure.llm.llm_provider.ChatGroq")
-@patch("infrastructure.llm.llm_provider.CircuitBreaker")
+@patch("infrastructure.llm.llm_provider.create_circuit_breaker")
 @patch("infrastructure.llm.llm_provider.os.getenv")
 def test_invoke_with_fallback_both_fail(mock_getenv, mock_cb, mock_groq, mock_openai):
     mock_getenv.return_value = "sk-test-key"
@@ -91,7 +91,7 @@ def test_invoke_with_fallback_both_fail(mock_getenv, mock_cb, mock_groq, mock_op
     mock_groq_instance = MagicMock()
     mock_groq_instance.invoke.side_effect = Exception("Groq down")
     mock_groq.return_value = mock_groq_instance
-    mock_cb.return_value.can_execute.return_value = True
+    mock_cb.return_value.acquire_permit.return_value = True
 
     from infrastructure.llm.llm_provider import LLMProvider, LLMUnavailableError
 
@@ -105,7 +105,7 @@ def test_invoke_with_fallback_both_fail(mock_getenv, mock_cb, mock_groq, mock_op
 
 @patch("infrastructure.llm.llm_provider.ChatOpenAI")
 @patch("infrastructure.llm.llm_provider.ChatGroq")
-@patch("infrastructure.llm.llm_provider.CircuitBreaker")
+@patch("infrastructure.llm.llm_provider.create_circuit_breaker")
 @patch("infrastructure.llm.llm_provider.os.getenv")
 def test_get_tool_calling_llm(mock_getenv, mock_cb, mock_groq, mock_openai):
     mock_getenv.return_value = "sk-test-key"
@@ -139,7 +139,7 @@ def test_openai_known_kwargs():
 
 @patch("infrastructure.llm.llm_provider.ChatOpenAI")
 @patch("infrastructure.llm.llm_provider.ChatGroq")
-@patch("infrastructure.llm.llm_provider.CircuitBreaker")
+@patch("infrastructure.llm.llm_provider.create_circuit_breaker")
 @patch("infrastructure.llm.llm_provider.os.getenv")
 @patch("infrastructure.llm.llm_provider.request_id_var")
 def test_llmchain_resolves_rid_at_invoke(mock_rid, mock_getenv, mock_cb, mock_groq, mock_openai):

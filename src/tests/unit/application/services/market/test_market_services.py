@@ -54,7 +54,7 @@ def test_compare_empty_ref_tickers_returns_error():
     assert "error" in result
 
 
-@patch("application.services.market.compare_service.get_price_data")
+@patch("shared.price_data.get_price_data")
 def test_compare_two_tickers(mock_get_price):
     mock_get_price.return_value = {
         "ticker": "VCB",
@@ -69,7 +69,7 @@ def test_compare_two_tickers(mock_get_price):
     assert result["requested_field"] == "close"
 
 
-@patch("application.services.market.compare_service.get_price_data")
+@patch("shared.price_data.get_price_data")
 def test_compare_three_way(mock_get_price):
     mock_get_price.return_value = {
         "ticker": "VCB",

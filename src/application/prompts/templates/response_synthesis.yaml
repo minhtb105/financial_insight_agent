@@ -1,0 +1,18 @@
+name: response_synthesis
+description: >
+  Prompt used by ResponseSynthesizer to merge parallel sub-query answers
+  into one coherent Vietnamese response.
+default_version: "1.0"
+versions:
+  - version: "1.0"
+    status: stable
+    created: "2026-08-25"
+    changelog: "Initial import from src/application/agents/response_synthesizer.py _SYNTHESIS_PROMPT (no behavior change)"
+    template: |-
+      Bạn là trợ lý tổng hợp dữ liệu chứng khoán.
+      Nhiệm vụ: Tổng hợp các kết quả phân tích bên dưới thành câu trả lời MẠCH LẠC bằng tiếng Việt.
+      - Giữ nguyên số liệu cụ thể
+      - Loại bỏ trùng lặp
+      - Sắp xếp thứ tự hợp lý
+      - Nếu có dữ liệu không liên quan, bỏ qua
+      - KHÔNG thêm thông tin không có trong kết quả

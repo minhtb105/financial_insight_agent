@@ -52,10 +52,9 @@ def test_get_tickers_in_sector_matches(mock_client):
             "sector": ["banking", "banking", "steel"],
         }
     )
-    from application.services.market.sector_service import SectorService
+    from application.services.market.sector_service import _get_tickers_in_sector
 
-    svc = SectorService()
-    result = svc._get_tickers_in_sector("banking")
+    result = _get_tickers_in_sector("banking")
     assert "VCB" in result
     assert "VNM" in result
     assert "HPG" not in result
@@ -69,20 +68,18 @@ def test_get_tickers_in_sector_no_match(mock_client):
             "sector": ["banking"],
         }
     )
-    from application.services.market.sector_service import SectorService
+    from application.services.market.sector_service import _get_tickers_in_sector
 
-    svc = SectorService()
-    result = svc._get_tickers_in_sector("real_estate")
+    result = _get_tickers_in_sector("real_estate")
     assert result == []
 
 
 @patch("application.services.market.sector_service.VNStockClient")
 def test_get_tickers_in_sector_missing_columns(mock_client):
     mock_client.return_value.company.overview.return_value = pd.DataFrame({"ticker": ["VCB"]})
-    from application.services.market.sector_service import SectorService
+    from application.services.market.sector_service import _get_tickers_in_sector
 
-    svc = SectorService()
-    result = svc._get_tickers_in_sector("banking")
+    result = _get_tickers_in_sector("banking")
     assert result == []
 
 
@@ -101,10 +98,9 @@ def test_get_performance_normal(mock_client):
             "low": [98.0, 103.0],
         }
     )
-    from application.services.market.sector_service import SectorService
+    from application.services.market.sector_service import _get_performance
 
-    svc = SectorService()
-    result = svc._get_performance("VCB")
+    result = _get_performance("VCB", "2026-03-01", "2026-03-08")
     assert result is not None
     assert result["ticker"] == "VCB"
     assert result["performance_pct"] == 5.0
@@ -122,20 +118,18 @@ def test_get_performance_insufficient_data(mock_client):
             "low": [98.0],
         }
     )
-    from application.services.market.sector_service import SectorService
+    from application.services.market.sector_service import _get_performance
 
-    svc = SectorService()
-    result = svc._get_performance("VCB")
+    result = _get_performance("VCB", "2026-03-01", "2026-03-08")
     assert result is None
 
 
 @patch("application.services.market.sector_service.VNStockClient")
 def test_get_performance_empty_data(mock_client):
     mock_client.return_value.fetch_trading_data.return_value = pd.DataFrame()
-    from application.services.market.sector_service import SectorService
+    from application.services.market.sector_service import _get_performance
 
-    svc = SectorService()
-    result = svc._get_performance("VCB")
+    result = _get_performance("VCB", "2026-03-01", "2026-03-08")
     assert result is None
 
 
@@ -143,18 +137,16 @@ def test_get_performance_empty_data(mock_client):
 
 
 def test_handle_query_empty_sector():
-    from application.services.market.sector_service import SectorService
+    from application.services.market.sector_service import handle_sector_query
 
-    svc = SectorService()
-    result = svc.handle_query(sector="")
+    result = handle_sector_query(sector="")
     assert "error" in result
 
 
 @patch("application.services.market.sector_service.get_cache_manager")
 def test_handle_query_cache_hit(mock_cache):
     mock_cache.return_value.get.return_value = {"cached": "result"}
-    from application.services.market.sector_service import SectorService
+    from application.services.market.sector_service import handle_sector_query
 
-    svc = SectorService()
-    result = svc.handle_query(sector="banking")
+    result = handle_sector_query(sector="banking")
     assert result == {"cached": "result"}
