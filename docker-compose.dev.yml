@@ -1,10 +1,40 @@
 services:
-  app:
+  mcp_server:
     build:
       context: .
       dockerfile: Dockerfile
       target: development
-    container_name: talenthub-ai-dev
+    container_name: finsight-mcp-dev
+    ports:
+      - "${MCP_EXTERNAL_PORT:-8001}:8001"
+    env_file:
+      - .env
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app/src
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8001
+      - QDRANT_HOST=${QDRANT_HOST:-qdrant}
+      - QDRANT_PORT=${QDRANT_PORT:-6333}
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
+    volumes:
+      - ./src:/app/src:cached
+      - /app/src/__pycache__
+    command: python -m mcp_server.server --transport streamable-http --host 0.0.0.0 --port 8001
+    depends_on:
+      qdrant:
+        condition: service_started
+    networks:
+      - finsight-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: finsight-backend-dev
     ports:
       - "${APP_EXTERNAL_PORT:-8000}:${APP_PORT:-8000}"
     env_file:
@@ -16,25 +46,51 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
       - APP_PORT=${APP_PORT:-8000}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3001}
+      - ENABLE_RAG_SCHEDULER=${ENABLE_RAG_SCHEDULER:-true}
+      - ADMIN_API_KEY=${ADMIN_API_KEY:-}
       - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      - MCP_URL=http://mcp_server:8001/mcp
+      - MCP_TRANSPORT=streamable-http
       - QDRANT_HOST=${QDRANT_HOST:-qdrant}
       - QDRANT_PORT=${QDRANT_PORT:-6333}
       - QDRANT_API_KEY=${QDRANT_API_KEY:-}
-      - QDRANT_CANDIDATES_COLLECTION=${QDRANT_CANDIDATES_COLLECTION:-talenthub_candidates}
-      - QDRANT_JOBS_COLLECTION=${QDRANT_JOBS_COLLECTION:-talenthub_jobs}
     volumes:
       - ./src:/app/src:cached
-      - ./tests:/app/tests:cached
-      - ./input:/app/input:cached
-      - ./output:/app/output
+      - ./frontend:/app/frontend:cached
       - /app/src/__pycache__
-      - /app/tests/__pycache__
     depends_on:
+      mcp_server:
+        condition: service_started
       qdrant:
         condition: service_started
     networks:
-      - talenthub-network
+      - finsight-network
+
+  frontend:
+    image: node:20-alpine
+    container_name: finsight-frontend-dev
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --hostname 0.0.0.0 --port 3000"
+    ports:
+      - "${FRONTEND_EXTERNAL_PORT:-3000}:3000"
+    env_file:
+      - .env
+    environment:
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-finsight-dev-secret-change-me-in-prod}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+      - API_URL=http://backend:${APP_PORT:-8000}
+      - NEXT_PUBLIC_API_URL=http://localhost:${APP_EXTERNAL_PORT:-8000}
+    volumes:
+      - ./frontend:/app:cached
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - backend
+    networks:
+      - finsight-network
 
   qdrant:
     image: qdrant/qdrant:latest
@@ -45,10 +101,10 @@ services:
     volumes:
       - qdrant_storage_dev:/qdrant/storage
     networks:
-      - talenthub-network
+      - finsight-network
 
 networks:
-  talenthub-network:
+  finsight-network:
     driver: bridge
 
 volumes:

@@ -1,11 +1,12 @@
 from copy import deepcopy
+import logging
 from typing import Any
 from shared.constants import RATIO_TTL_HOURS
 from shared.utils.time_processor import TimeProcessor
-from infrastructure.api_clients.vn_stock_client import VNStockClient
-from infrastructure.cache import get_cache_manager
-from infrastructure.cache.cache_keys import make_cache_key
+from shared.utils.cache_keys import make_cache_key
 from shared.base_service import BaseService
+from shared.ports.financial_port import FinancialPort
+from shared.ports.cache_port import CachePort
 
 
 def _ensure_float(v, default: float = 0.0) -> float:
@@ -19,9 +20,9 @@ def _ensure_float(v, default: float = 0.0) -> float:
 
 
 class FinancialRatioService(BaseService):
-    def __init__(self) -> None:
-        """Khởi tạo FinancialRatioService."""
-        super().__init__("financial_ratio_service")
+    def __init__(self, cache: CachePort, financial_port: FinancialPort) -> None:
+        super().__init__("financial_ratio_service", cache)
+        self._financial = financial_port
 
     def handle_query(
         self,
@@ -41,26 +42,21 @@ class FinancialRatioService(BaseService):
         if err:
             return err
 
-        results = {}
-        for ticker in tickers:
-            try:
-                client = VNStockClient(ticker=ticker)
-                _ = client.ticker
-                results[ticker] = get_financial_ratios(client, field, {"requested_field": field})
-            except Exception as e:
-                self.logger.error(f"Failed to init VNStockClient for {ticker}: {e}")
-                results[ticker] = {"error": str(e)}
-        return results
+        return self.for_each_ticker(tickers, lambda t: self._fetch_single(t, field))
+
+    def _fetch_single(self, ticker: str, field: str) -> dict[str, Any]:
+        return self._cached_fetch(
+            "financial_ratio",
+            ticker,
+            lambda: get_financial_ratios(self._financial, ticker, field, {"requested_field": field}, cache=self._cache),
+            ttl_hours=RATIO_TTL_HOURS,
+            ratio_type=field,
+        )
 
 
-_financial_ratio_service = FinancialRatioService()
 
 
-def handle_financial_ratio_query(
-    tickers: list[str],
-    field: str = "pe",
-) -> dict[str, Any]:
-    return _financial_ratio_service.handle_query(tickers=tickers, field=field)
+
 
 
 def get_pe_interpretation(pe_ratio: float) -> str:
@@ -276,41 +272,14 @@ _RATIO_ENTRIES: dict[str, dict[str, Any]] = {
 
 
 def get_financial_ratios(
-    client: VNStockClient, ratio_type: str | None = None, parsed: dict[str, Any] | None = None
+    port: FinancialPort, ticker: str, ratio_type: str | None = None, parsed: dict[str, Any] | None = None, cache: CachePort | None = None
 ) -> dict[str, Any]:
-    """Lấy các chỉ số tài chính cho một mã chứng khoán.
-
-    Args:
-        client: Đối tượng VNStockClient đã khởi tạo.
-        ratio_type: Loại chỉ số cần lấy (pe, pb, roe, ...).
-        parsed: Dict chứa tham số thời gian.
-
-    Returns:
-        Dict chứa các chỉ số tài chính hoặc lỗi.
-    """
+    """Lấy các chỉ số tài chính cho một mã chứng khoán — strict via FinancialPort."""
     try:
-        ticker = client.ticker
-        cache = get_cache_manager()
-        rt = ratio_type or "all"
-        cache_key = make_cache_key("financial_ratio", ticker, ratio_type=rt)
-        cached = cache.get(cache_key) if cache else None
-        if cached is not None:
-            if parsed:
-                result = deepcopy(cached)
-                tp = TimeProcessor()
-                tp_result = tp.process_time_params(parsed)
-                for val in result.values():
-                    if isinstance(val, dict):
-                        val["time_range"] = tp_result.get("time_description", "Latest")
-                return result
-            return cached
-
-        financial_data = client.company.financial_statement()
-
-        if financial_data is None or financial_data.empty:
+        financial_data = port.get_financial_statement(ticker)
+        if financial_data is None or getattr(financial_data, "empty", False):
             return {"error": "No financial data available"}
-
-        market_data = client.company.market_data()
+        market_data = port.get_market_data(ticker)
 
         ratios = {}
 
@@ -337,9 +306,16 @@ def get_financial_ratios(
                     }
 
         result = ratios if ratios else {"error": "No ratios calculated"}
-        if cache and "error" not in result:
-            cache.set(cache_key, result, ttl_hours=RATIO_TTL_HOURS)
         return result
 
     except Exception as e:
         return {"error": str(e)}
+
+def handle_financial_ratio_query(tickers: list[str],
+    field: str = "pe",) -> dict[str, Any]:
+    from shared.service_registry import get_service
+    svc = get_service("financial_ratio")
+    if svc is None:
+        raise RuntimeError("Service 'financial_ratio' not initialized — call init_deps()")
+    return svc.handle_query(tickers=tickers, field=field)
+

@@ -1,11 +1,13 @@
+import logging
 import math
-from typing import Any, TypeVar
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from concurrent.futures import as_completed
+from typing import Any, TypeVar
 
-from infrastructure.observability import get_logger
-from infrastructure.cache import get_cache_manager
-from infrastructure.cache.cache_keys import make_cache_key
+from shared.ports.cache_port import CachePort
+from shared.ports.market_data_port import MarketDataPort
+from shared.utils.cache_keys import make_cache_key
 from shared.utils.time_processor import TimeProcessor
 
 _FetchResult = TypeVar("_FetchResult")
@@ -16,8 +18,12 @@ _TIMEOUT_SECONDS = 30
 
 
 class BaseService:
-    def __init__(self, logger_name: str) -> None:
-        self.logger = get_logger(logger_name)
+    """Strict DI base — cache is required, market_data optional for price-based services."""
+
+    def __init__(self, logger_name: str, cache: CachePort, market_data: MarketDataPort | None = None) -> None:
+        self.logger = logging.getLogger(logger_name)
+        self._cache: CachePort = cache
+        self._market_data: MarketDataPort | None = market_data
 
     def for_each_ticker(
         self,
@@ -25,19 +31,11 @@ class BaseService:
         fetch_fn: Callable[[str], dict[str, Any]],
         max_workers: int = _DEFAULT_MAX_WORKERS,
     ) -> dict[str, Any]:
-        """Fetch data for multiple tickers in parallel with isolated error handling.
-
-        Each ticker runs in its own thread. A single failure never blocks others.
-        Note: creates a fresh executor per call; reuse via caller-level pool if hot path.
-        """
         if not tickers:
             return {"error": "Missing ticker"}
-
         workers = max(1, min(max_workers, _MAX_WORKERS_CEILING))
         results: dict[str, Any] = {}
-
         overall_timeout = min(len(tickers) * _TIMEOUT_SECONDS, _TIMEOUT_SECONDS * 4)
-
         with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {executor.submit(fetch_fn, t): t for t in tickers}
             try:
@@ -45,16 +43,15 @@ class BaseService:
                     ticker = futures[future]
                     try:
                         results[ticker] = future.result(timeout=_TIMEOUT_SECONDS)
-                    except TimeoutError:
-                        self.logger.error(f"Timeout for {ticker} after {_TIMEOUT_SECONDS}s")
+                    except FuturesTimeoutError:
+                        self.logger.error("Timeout for %s after %ss", ticker, _TIMEOUT_SECONDS)
                         results[ticker] = {"error": f"Timeout fetching {ticker}"}
                     except Exception as e:
-                        self.logger.error(f"Failed for {ticker}: {e}")
+                        self.logger.error("Failed for %s: %s", ticker, e)
                         results[ticker] = {"error": str(e)}
-            except TimeoutError:
+            except FuturesTimeoutError:
                 self.logger.error("Overall timeout waiting for ticker futures")
                 executor.shutdown(wait=False, cancel_futures=True)
-
         return results
 
     def _build_time_params(
@@ -65,11 +62,6 @@ class BaseService:
         start_date: str | None = None,
         end_date: str | None = None,
     ) -> tuple[str, str]:
-        """Extract and process time parameters.
-        
-        Consolidates duplicate time-param-building logic from 4 services.
-        Returns tuple of (start_date, end_date) as processed by TimeProcessor.
-        """
         time_processor = TimeProcessor()
         time_query: dict[str, Any] = {}
         if days is not None:
@@ -95,25 +87,11 @@ class BaseService:
             return True
 
     def _require_tickers(self, tickers: list[str], min_count: int = 1) -> dict[str, Any] | None:
-        """Validate tickers list. Returns error dict or None if valid."""
         if not tickers or len(tickers) < min_count:
             msg = f"Need at least {min_count} ticker(s)" if min_count > 1 else "Missing ticker"
             self.logger.error(msg)
             return {"error": msg}
         return None
-
-    def _fetch_single(self, ticker: str, start_date: str, end_date: str) -> dict[str, Any]:
-        """Fetch price data for a single ticker. Shared across 3 services."""
-        from shared.price_data import get_price_data
-        try:
-            data = get_price_data(ticker, start_date, end_date)
-            if data and "error" not in data:
-                return data
-            self.logger.warning(f"No data for {ticker}")
-            return {"error": f"No data for {ticker}"}
-        except Exception as e:
-            self.logger.error(f"Failed to fetch data for {ticker}: {e}")
-            return {"error": str(e)}
 
     def _cached_fetch(
         self,
@@ -123,29 +101,29 @@ class BaseService:
         ttl_hours: int = 24,
         **extra_key_parts: Any,
     ) -> _FetchResult:
-        """Cache-check → fetch → cache-set wrapper.
-        
-        Handles the common cache-then-fetch pattern used across all services.
-        If no cache manager is available, falls through to fetch_fn directly.
-        """
-        cache = self._get_cache_manager()
         cache_key = make_cache_key(namespace, ticker, **extra_key_parts)
-        if cache:
-            cached = cache.get(cache_key)
-            if cached is not None:
-                return cached
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached  # type: ignore
         result = fetch_fn()
-        if cache and isinstance(result, dict) and "error" not in result:
-            cache.set(cache_key, result, ttl_hours=ttl_hours)
+        if isinstance(result, dict) and "error" not in result:
+            self._cache.set(cache_key, result, ttl_hours=ttl_hours)
         return result
 
-    def _get_cache_manager(self) -> Any | None:
-        """Get cache manager, returning None on any error.
-        
-        Consolidates identical 5-line _cache() methods from PriceService,
-        PortfolioService, FinancialRatioService, SectorService, NewsSentimentService.
-        """
+    def _get_cache_manager(self) -> CachePort:
+        return self._cache
+
+    def _fetch_single(self, ticker: str, start_date: str, end_date: str) -> dict[str, Any]:
+        """Fetch price data via MarketDataPort — strict, no infrastructure fallback."""
+        if self._market_data is None:
+            self.logger.error("MarketDataPort not injected for %s", ticker)
+            return {"error": "Market data unavailable — DI not wired"}
         try:
-            return get_cache_manager()
-        except Exception:
-            return None
+            data = self._market_data.get_price_data(ticker, start_date, end_date)
+            if data and "error" not in data:
+                return data
+            self.logger.warning("No data for %s", ticker)
+            return {"error": f"No data for {ticker}"}
+        except Exception as e:
+            self.logger.error("Failed to fetch data for %s: %s", ticker, e)
+            return {"error": str(e)}

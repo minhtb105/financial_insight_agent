@@ -1,11 +1,12 @@
 import json
+import logging
 from typing import Any
 import pandas as pd
 from shared.constants import INDICATOR_TTL_HOURS
-from infrastructure.api_clients.vn_stock_client import VNStockClient
-from infrastructure.cache import get_cache_manager
-from infrastructure.cache.cache_keys import make_cache_key
+from shared.utils.cache_keys import make_cache_key
 from shared.base_service import BaseService
+from shared.ports.market_data_port import MarketDataPort
+from shared.ports.cache_port import CachePort
 
 
 _INDICATOR_REGISTRY: dict[str, dict[str, Any]] = {
@@ -28,9 +29,9 @@ _INDICATOR_REGISTRY: dict[str, dict[str, Any]] = {
 
 
 class IndicatorService(BaseService):
-    def __init__(self) -> None:
-        """Khởi tạo IndicatorService."""
-        super().__init__("indicator_service")
+    def __init__(self, cache: CachePort, market_data: MarketDataPort) -> None:
+        """Khởi tạo IndicatorService — strict DI."""
+        super().__init__("indicator_service", cache, market_data)
 
     def handle_query(
         self,
@@ -75,8 +76,6 @@ class IndicatorService(BaseService):
         indicator_params = indicator_params or {}
 
         try:
-            client = VNStockClient(ticker=ticker)
-
             start_date, end_date = self._build_time_params(
                 days=days,
                 weeks=weeks,
@@ -85,7 +84,7 @@ class IndicatorService(BaseService):
                 end_date=end_date,
             )
 
-            cache = get_cache_manager()
+            cache = self._cache
             ip_str = json.dumps(indicator_params, sort_keys=True) if indicator_params else ""
             cache_key = make_cache_key(
                 "indicator",
@@ -99,7 +98,12 @@ class IndicatorService(BaseService):
             if cached is not None:
                 return cached
 
-            data = client.fetch_trading_data(start=start_date, end=end_date, interval="1d")
+            result = self._market_data.get_price_data(ticker, start_date, end_date)
+            if result is None or "error" in result or not result.get("data"):
+                return {"error": "No data available"}
+            import pandas as pd
+
+            data = pd.DataFrame(result["data"])
 
             if data is None or data.empty:
                 return {"error": "No data available"}
@@ -121,41 +125,9 @@ class IndicatorService(BaseService):
             return {"error": str(e)}
 
 
-_indicator_service = IndicatorService()
 
 
-def handle_indicator_query(
-    tickers: list[str],
-    indicator: str = "sma",
-    period: int | None = None,
-    fast_period: int | None = None,
-    slow_period: int | None = None,
-    days: int | None = None,
-    weeks: int | None = None,
-    months: int | None = None,
-    start_date: str | None = None,
-    end_date: str | None = None,
-) -> dict[str, Any]:
-    """Calculate technical indicators (SMA/RSI/MACD) for one or more tickers."""
-    indicator_params: dict[str, Any] = {}
-    indicator_lower = indicator.lower()
-    if indicator_lower == "sma":
-        indicator_params["sma"] = [period or 20]
-    elif indicator_lower == "rsi":
-        indicator_params["rsi"] = [period or 14]
-    elif indicator_lower == "macd":
-        indicator_params["macd"] = [(fast_period or 12, slow_period or 26)]
 
-    return _indicator_service.handle_query(
-        tickers=tickers,
-        indicator_params=indicator_params,
-        field=indicator_lower,
-        days=days,
-        weeks=weeks,
-        months=months,
-        start_date=start_date,
-        end_date=end_date,
-    )
 
 
 def _fmt_date(value: Any) -> str:
@@ -261,3 +233,32 @@ def calculate_macd(
             result.append(entry)
 
     return result
+
+def handle_indicator_query(
+    tickers: list[str],
+    indicator: str = "sma",
+    period: int | None = None,
+    fast_period: int | None = None,
+    slow_period: int | None = None,
+    days: int | None = None,
+    weeks: int | None = None,
+    months: int | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict[str, Any]:
+    from shared.service_registry import get_service
+    svc = get_service("indicator")
+    if svc is None:
+        raise RuntimeError("Service 'indicator' not initialized — call init_deps()")
+    # Map indicator -> field + indicator_params
+    indicator_params = {}
+    if period is not None:
+        indicator_params["period"] = period
+    if fast_period is not None:
+        indicator_params["fast_period"] = fast_period
+    if slow_period is not None:
+        indicator_params["slow_period"] = slow_period
+    if not indicator_params:
+        indicator_params = None
+    return svc.handle_query(tickers=tickers, field=indicator, indicator_params=indicator_params, days=days, weeks=weeks, months=months, start_date=start_date, end_date=end_date)
+

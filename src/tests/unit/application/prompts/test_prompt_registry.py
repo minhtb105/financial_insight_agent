@@ -25,7 +25,9 @@ class TestBuiltinTemplates:
 
     def test_default_version_is_pinned(self):
         registry = get_registry()
-        for name in ("agent_system", "response_synthesis", "query_splitter"):
+        # agent_system is now 1.2 (MCP minimal), others stay 1.0
+        assert registry.get_entry("agent_system")["version"] == "1.2"
+        for name in ("response_synthesis", "query_splitter"):
             entry = registry.get_entry(name)
             assert entry["version"] == "1.0"
             assert entry["status"] == "stable"
@@ -35,8 +37,10 @@ class TestBuiltinTemplates:
         assert text.startswith(
             "You are a professional stock analysis assistant for the Vietnamese market."
         )
-        assert "[TICKER: value, nguồn: tool_name]" in text
-        assert len(text) > 1000
+        # v1.2 is MCP-minimal: citation guidance moved to tools/list descriptions
+        assert "Tools are provided via MCP tools/list" in text
+        assert "[TICKER: value, nguồn: tool_name]" not in text
+        assert len(text) > 500
 
     def test_unknown_prompt_raises(self):
         with pytest.raises(PromptRegistryError, match="Unknown prompt"):

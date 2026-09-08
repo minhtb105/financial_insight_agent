@@ -1,28 +1,15 @@
-from typing import Any
+import logging
 import re
 from datetime import datetime, timedelta, timezone
-from shared.constants import NEWS_TTL_HOURS
-from vnstock import Company
-from infrastructure.cache import get_cache_manager
-from infrastructure.cache.cache_keys import make_cache_key
+from typing import Any
+
 from shared.base_service import BaseService
+from shared.constants import NEWS_TTL_HOURS
+from shared.ports.cache_port import CachePort
+from shared.ports.news_port import NewsPort
+from shared.utils.cache_keys import make_cache_key
 
-_NEGATION_WORDS = frozenset(
-    {
-        "không",
-        "chẳng",
-        "chưa",
-        "đừng",
-        "không phải",
-        "không có",
-        "not",
-        "no",
-        "never",
-        "neither",
-        "nor",
-    }
-)
-
+_NEGATION_WORDS = frozenset({"không", "chẳng", "chưa", "đừng", "không phải", "không có", "not", "no", "never", "neither", "nor"})
 _WORD_SPLIT = re.compile(r"\w+|[^\w\s]")
 
 
@@ -51,75 +38,8 @@ def _is_negated(keyword: str, text_lower: str, window: int = 3) -> bool:
     return False
 
 
-_POSITIVE_KEYWORDS = {
-    "tăng",
-    "lợi nhuận",
-    "doanh thu",
-    "tích cực",
-    "khả quan",
-    "tăng trưởng",
-    "mở rộng",
-    "đầu tư",
-    "cổ tức",
-    "thưởng",
-    "hợp tác",
-    "chiến lược",
-    "đột phá",
-    "hiệu quả",
-    "cải thiện",
-    "phục hồi",
-    "lãi",
-    "thuận lợi",
-    "triển vọng",
-    "kỳ vọng",
-    "mua vào",
-    "outperform",
-    "upgrade",
-}
-
-_NEGATIVE_KEYWORDS = {
-    "giảm",
-    "lỗ",
-    "thua lỗ",
-    "rủi ro",
-    "tiêu cực",
-    "cảnh báo",
-    "khó khăn",
-    "suy thoái",
-    "khủng hoảng",
-    "phá sản",
-    "kiện tụng",
-    "cắt lỗ",
-    "bán ra",
-    "thoái vốn",
-    "nợ xấu",
-    "mất thanh khoản",
-    "downgrade",
-    "underperform",
-}
-
-
-def _fetch_news_from_vnstock(ticker: str) -> list[dict[str, Any]]:
-    try:
-        company = Company(symbol=ticker, source="VCI")
-        df = company.news()
-        if df is None or df.empty:
-            return []
-        records = []
-        for _, row in df.iterrows():
-            records.append(
-                {
-                    "title": row.get("news_title", ""),
-                    "content": row.get("news_short_content") or row.get("news_full_content", ""),
-                    "source": row.get("news_source", ""),
-                    "url": row.get("news_source_link", ""),
-                    "date": row.get("public_date", ""),
-                    "ticker": row.get("ticker", ticker),
-                }
-            )
-        return records
-    except Exception:
-        return []
+_POSITIVE_KEYWORDS = {"tăng", "lợi nhuận", "doanh thu", "tích cực", "khả quan", "tăng trưởng", "mở rộng", "đầu tư", "cổ tức", "thưởng", "hợp tác", "chiến lược", "đột phá", "hiệu quả", "cải thiện", "phục hồi", "lãi", "thuận lợi", "triển vọng", "kỳ vọng", "mua vào", "outperform", "upgrade"}
+_NEGATIVE_KEYWORDS = {"giảm", "lỗ", "thua lỗ", "rủi ro", "tiêu cực", "cảnh báo", "khó khăn", "suy thoái", "khủng hoảng", "phá sản", "kiện tụng", "cắt lỗ", "bán ra", "thoái vốn", "nợ xấu", "mất thanh khoản", "downgrade", "underperform"}
 
 
 def _classify_sentiment(text: str) -> float:
@@ -159,9 +79,9 @@ def _calc_sentiment_from_articles(articles: list[dict]) -> float:
 
 
 class NewsSentimentService(BaseService):
-    def __init__(self) -> None:
-        """Khởi tạo NewsSentimentService."""
-        super().__init__("NewsSentimentService")
+    def __init__(self, cache: CachePort, news_port: NewsPort) -> None:
+        super().__init__("NewsSentimentService", cache)
+        self._news = news_port
 
     def _filter_articles_by_time(self, articles: list[dict], query: dict) -> list[dict]:
         days = query.get("days")
@@ -186,23 +106,19 @@ class NewsSentimentService(BaseService):
                     article_date = article_date.replace(tzinfo=timezone.utc)
                 if article_date >= cutoff:
                     filtered.append(a)
-                else:
-                    continue
             except (ValueError, TypeError):
                 filtered.append(a)
         return filtered
 
     def _fetch_single_news(self, ticker: str) -> list[dict[str, Any]]:
-        cm = self._get_cache_manager()
         cache_key = make_cache_key("news", ticker)
-        cached = cm.get(cache_key) if cm else None
-        if cached:
-            return cached
-        articles = _fetch_news_from_vnstock(ticker)
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached  # type: ignore
+        articles = self._news.fetch_news(ticker)
         if not articles:
-            self.logger.warning(f"No news found for {ticker}")
-        if cm:
-            cm.set(cache_key, articles, ttl_hours=NEWS_TTL_HOURS)
+            self.logger.warning("No news found for %s", ticker)
+        self._cache.set(cache_key, articles, ttl_hours=NEWS_TTL_HOURS)
         return articles
 
     def get_news_data(self, query: dict) -> dict[str, Any]:
@@ -214,7 +130,7 @@ class NewsSentimentService(BaseService):
         for ticker in tickers:
             articles = raw.get(ticker, [])
             if isinstance(articles, dict) and "error" in articles:
-                self.logger.error(f"Failed to fetch news for {ticker}: {articles.get('error')}")
+                self.logger.error("Failed to fetch news for %s: %s", ticker, articles.get("error"))
                 result[ticker] = []
             else:
                 articles = articles if articles else []
@@ -234,14 +150,6 @@ class NewsSentimentService(BaseService):
         return {"sentiment": sentiment}
 
     def analyze_news_sentiment(self, query: dict) -> dict[str, Any]:
-        """Phân tích tin tức và cảm xúc thị trường cho danh sách mã chứng khoán.
-
-        Args:
-            query: Dict chứa tham số truy vấn (tickers, ...).
-
-        Returns:
-            Dict chứa tin tức, điểm cảm xúc và khối lượng xã hội cho từng mã.
-        """
         tickers = query.get("tickers", [])
         err = self._require_tickers(tickers)
         if err:
@@ -249,20 +157,13 @@ class NewsSentimentService(BaseService):
         try:
             news_data = self.get_news_data(query)
             news_by_ticker = news_data.get("news", {})
-
             result = {}
             for ticker in tickers:
                 articles = news_by_ticker.get(ticker, [])
-                result[ticker] = {
-                    "news": articles,
-                    "sentiment": _calc_sentiment_from_articles(articles),
-                    "social_volume": len(articles),
-                }
+                result[ticker] = {"news": articles, "sentiment": _calc_sentiment_from_articles(articles), "social_volume": len(articles)}
             return result
         except Exception as e:
-            self.logger.error(
-                "Error analyzing news sentiment for %s: %s", tickers, e, exc_info=True
-            )
+            self.logger.error("Error analyzing news sentiment for %s: %s", tickers, e, exc_info=True)
             return {"error": str(e)}
 
     def compare_news_sentiment(self, query: dict) -> dict[str, Any]:
@@ -276,13 +177,42 @@ class NewsSentimentService(BaseService):
             return {"error": "No tickers to compare"}
         try:
             sentiment_result = self.get_sentiment_data({"tickers": all_tickers})
-            sentiment_by_ticker = sentiment_result.get("sentiment", {})
-            return sentiment_by_ticker
+            return sentiment_result.get("sentiment", {})
         except Exception as e:
-            self.logger.error(f"Error comparing news sentiment: {e}", exc_info=True)
+            self.logger.error("Error comparing news sentiment: %s", e, exc_info=True)
             return {"error": str(e)}
 
-_news_sentiment_service = NewsSentimentService()
+    def handle_query(
+        self,
+        tickers: list[str],
+        field: str = "all",
+        compare_with: list[str] | None = None,
+        days: int | None = None,
+        weeks: int | None = None,
+        months: int | None = None,
+    ) -> dict[str, Any]:
+        if not tickers:
+            return {"error": "Missing ticker"}
+        try:
+            if compare_with and field not in (None, "sentiment", "all"):
+                return {"error": "Comparison only supported for sentiment field"}
+            if compare_with:
+                return self.compare_news_sentiment({"tickers": tickers, "compare_with": compare_with})
+            time_kw: dict[str, Any] = {}
+            if days is not None:
+                time_kw["days"] = days
+            if weeks is not None:
+                time_kw["weeks"] = weeks
+            if months is not None:
+                time_kw["months"] = months
+            query = {"tickers": tickers}
+            if field != "all":
+                query["requested_field"] = field
+            query.update(time_kw)
+            dispatch = {"news": self.get_news_data, "sentiment": self.get_sentiment_data}
+            return dispatch.get(field, self.analyze_news_sentiment)(query)
+        except Exception as e:
+            return {"error": str(e)}
 
 
 def handle_news_sentiment_query(
@@ -293,33 +223,8 @@ def handle_news_sentiment_query(
     weeks: int | None = None,
     months: int | None = None,
 ) -> dict[str, Any]:
-    """Fetch news and market sentiment for tickers."""
-    if not tickers:
-        return {"error": "Missing ticker"}
-    svc = _news_sentiment_service
-    requested_field = field if field != "all" else None
-    try:
-        if compare_with and requested_field not in (None, "sentiment"):
-            return {"error": "Comparison only supported for sentiment field"}
-        if compare_with:
-            return svc.compare_news_sentiment(
-                {"tickers": tickers, "compare_with": compare_with}
-            )
-        time_kw: dict[str, Any] = {}
-        if days is not None:
-            time_kw["days"] = days
-        if weeks is not None:
-            time_kw["weeks"] = weeks
-        if months is not None:
-            time_kw["months"] = months
-        query = {"tickers": tickers}
-        if requested_field:
-            query["requested_field"] = requested_field
-        query.update(time_kw)
-        dispatch = {
-            "news": svc.get_news_data,
-            "sentiment": svc.get_sentiment_data,
-        }
-        return dispatch.get(requested_field, svc.analyze_news_sentiment)(query)
-    except Exception as e:
-        return {"error": str(e)}
+    from shared.service_registry import get_service
+    svc = get_service("news")
+    if svc is None:
+        raise RuntimeError("Service 'news' not initialized — call init_deps()")
+    return svc.handle_query(tickers=tickers, field=field, compare_with=compare_with, days=days, weeks=weeks, months=months)

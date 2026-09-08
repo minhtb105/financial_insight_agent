@@ -1,12 +1,14 @@
+import logging
 from typing import Any
 from shared.utils.calculations import calculate_std_dev
 from shared.base_service import BaseService
+from shared.ports.market_data_port import MarketDataPort
+from shared.ports.cache_port import CachePort
 
 
 class RankingService(BaseService):
-    def __init__(self) -> None:
-        """Khởi tạo RankingService."""
-        super().__init__("RankingService")
+    def __init__(self, cache: CachePort, market_data: MarketDataPort) -> None:
+        super().__init__("ranking_service", cache, market_data)
 
     def handle_query(
         self,
@@ -55,32 +57,9 @@ class RankingService(BaseService):
 
 
 
-_ranking_service = RankingService()
 
 
-def handle_ranking_query(
-    tickers: list[str],
-    field: str = "close",
-    aggregate: str = "max",
-    days: int | None = None,
-    weeks: int | None = None,
-    months: int | None = None,
-    start_date: str | None = None,
-    end_date: str | None = None,
-) -> dict[str, Any]:
-    """Rank 2+ tickers by a price field using max/min/mean/latest aggregation."""
-    if not tickers or len(tickers) < 2:
-        return {"error": "Need at least 2 tickers for ranking"}
-    return _ranking_service.handle_query(
-        tickers=tickers,
-        field=field,
-        aggregate=aggregate,
-        days=days,
-        weeks=weeks,
-        months=months,
-        start_date=start_date,
-        end_date=end_date,
-    )
+
 
 
 def perform_ranking(all_data: dict[str, Any], field: str, aggregate: str) -> dict[str, Any]:
@@ -159,3 +138,18 @@ def perform_ranking(all_data: dict[str, Any], field: str, aggregate: str) -> dic
     }
 
     return ranking
+
+def handle_ranking_query(tickers: list[str],
+    field: str = "close",
+    aggregate: str = "max",
+    days: int | None = None,
+    weeks: int | None = None,
+    months: int | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,) -> dict[str, Any]:
+    from shared.service_registry import get_service
+    svc = get_service("ranking")
+    if svc is None:
+        raise RuntimeError("Service 'ranking' not initialized — call init_deps()")
+    return svc.handle_query(tickers=tickers, field=field, aggregate=aggregate, days=days, weeks=weeks, months=months, start_date=start_date, end_date=end_date)
+

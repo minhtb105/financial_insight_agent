@@ -17,7 +17,7 @@ def agent_with_mocks():
     """
     with (
         patch("application.agents.agent.LLMProvider") as mock_provider_cls,
-        patch("application.agents.agent.ALL_TOOLS", []),
+        patch("infrastructure.mcp.loader.load_mcp_tools_sync", return_value=[]),
         patch("application.agents.agent.CustomToolNode"),
         patch("application.agents.agent.ResponseSynthesizer"),
         patch("application.agents.agent.HybridQuerySplitter"),
@@ -57,7 +57,7 @@ def test_agent_build_memory_context_no_memory(mock_mem):
     mock_mem.return_value = None
     with (
         patch("application.agents.agent.LLMProvider"),
-        patch("application.agents.agent.ALL_TOOLS", []),
+        patch("infrastructure.mcp.loader.load_mcp_tools_sync", return_value=[]),
         patch("application.agents.agent.CustomToolNode"),
         patch("application.agents.agent.ResponseSynthesizer"),
         patch("application.agents.agent.HybridQuerySplitter"),
@@ -81,7 +81,7 @@ def test_agent_output_guardrails_sanitizes(mock_guardrails):
     mock_guardrails.return_value = mock_gr
     with (
         patch("application.agents.agent.LLMProvider"),
-        patch("application.agents.agent.ALL_TOOLS", []),
+        patch("infrastructure.mcp.loader.load_mcp_tools_sync", return_value=[]),
         patch("application.agents.agent.CustomToolNode"),
         patch("application.agents.agent.ResponseSynthesizer"),
         patch("application.agents.agent.HybridQuerySplitter"),

@@ -15,6 +15,58 @@ Financial Insight Agent là hệ thống AI phân tích chứng khoán sử dụ
 
 ---
 
+## 💡 Vì sao dự án này tồn tại? — Pain Point Giáo dục Tài chính
+
+> Dự án chuyển từ "demo kỹ thuật ReAct agent" sang **giải bài toán thực tế có bằng chứng**: giúp nhà đầu tư cá nhân Việt Nam ra quyết định có căn cứ, có trích dẫn — thay vì giao dịch cảm tính. Toàn bộ số liệu dưới đây đều có nguồn công khai để bạn tự kiểm chứng.
+
+### 1. Quy mô thị trường — 11–13 triệu tài khoản, tăng rất nhanh
+
+Số tài khoản chứng khoán cá nhân trong nước tăng liên tục: **11,8 triệu cuối 2025** (~11% dân số, tăng thêm 2,6 triệu chỉ trong năm 2025) [Thời báo Tài chính Việt Nam](https://thoibaotaichinhvietnam.vn/so-luong-tai-khoan-chung-khoan-cua-nha-dau-tu-trong-nuoc-da-tang-gan-26-trieu-tai-khoan-trong-nam-2025-190337.html) → vượt mốc **12 triệu (02/2026)** [Vietstock](https://vietstock.vn/2026/02/so-luong-tai-khoan-chung-khoan-tai-viet-nam-vuot-moc-12-trieu-830-1401652.htm) → vượt **13 triệu (05/2026, ~13% dân số)** [Báo Nhân Dân / VSDC](https://baomoi.com/tinh-toi-het-thang-5-2026-viet-nam-chinh-thuc-vuot-moc-13-trieu-tai-khoan-chung-khoan-c55354494.epi). Đây là nhóm người dùng tiềm năng cực lớn và vẫn đang tăng ~13%/năm.
+
+### 2. Hiểu biết tài chính thấp & thiếu kế hoạch dài hạn — có số liệu định lượng
+
+- **S&P Global FinLit Survey 2014** (140 quốc gia): Việt Nam chỉ **24%** dân số trưởng thành hiểu biết tài chính cơ bản — thấp hơn Thái Lan 27%, Indonesia 32%, Malaysia 36%, Singapore 59% [div.gov.vn](https://div.gov.vn/day-manh-pho-cap-tai-chinh-tai-viet-nam).
+- **Sun Life Financial Resilience Index 2026**: **59%** người tiêu dùng Việt tự đánh giá kiến thức tài chính chỉ ở mức cơ bản/thấp; nhóm "năng lực tài chính cao" giảm từ 34% (2025) xuống 31% (2026) [Điện tử & Ứng dụng](https://dientuungdung.vn/chi-so-nang-luc-tai-chinh-2026-kha-nang-chong-chiu-tai-chinh-cua-nguoi-viet-vuot-nhieu-thi-truong-trong-khu-vuc-16320.html).
+- **TVS "Sức khỏe Tài chính & Niềm tin Đầu tư 2026"** (1.000 người, 5 TP lớn): chỉ **27% có kế hoạch tài chính dài hạn rõ ràng, 73% chưa có** (Sun Life 2026 đưa con số tương tự: 61% không có kế hoạch hoặc chỉ <1 năm); **95% chưa từng dùng dịch vụ tư vấn tài chính trả phí chuyên nghiệp**; "ảo giác an toàn" (85% tự tin xoay được tiền mặt nhưng ~1/2 chỉ thanh khoản được ≤40% tài sản trong 30 ngày); "đa dạng hóa giả" (55% nắm 2–3 kênh, 39% nắm 4–5 kênh nhưng tỉ trọng cổ phiếu/trái phiếu/chứng chỉ quỹ/ngoại tệ vẫn <10%) [Nhịp Cầu Đầu Tư](https://nhipcaudautu.vn/tai-chinh/di-cung-f0/quan-tri-tai-san-va-nghich-ly-cua-niem-tin-3365371/).
+
+> Con số **95% chưa dùng tư vấn trả phí** là quan trọng nhất: nhu cầu định hướng có thật nhưng kênh tư vấn truyền thống gần như không chạm tới số đông.
+
+### 3. Hành vi giao dịch cảm tính, thiếu kỷ luật cắt lỗ
+
+Nhiều nguồn mô tả mẫu hình lặp lại ở nhà đầu tư F0: *"lãi thì chốt non, lỗ thì gồng tới chết"*, thiếu kỷ luật cắt lỗ, dễ cuốn theo tin đồn mạng xã hội [DSC](https://www.dsc.com.vn/kien-thuc/nha-dau-tu-f0-la-gi) [Prudential](https://www.prudential.com.vn/vi/blog-nhip-song-khoe/quan-ly-tai-chinh/nha-dau-tu-f0-la-gi-huong-dan-cho-nguoi-moi-bat-dau/).
+
+> **Lưu ý trích dẫn:** Các con số giật gân như *"90% F0 mất 90% tài sản trong 90 ngày"* hay *"95% NĐT thua lỗ"* xuất hiện trên [Lao Động](https://specials.laodong.vn/90-nha-dau-tu-chung-khoan-f0-mat-90-tai-san-trong-90-ngay-dau-tien-930926/) và trang đào tạo/môi giới nhưng **không có phương pháp khảo sát gốc công khai** — nên dùng như **tín hiệu định tính** về mẫu hình hành vi, không nên trích như thống kê chính xác (đúng khuyến nghị trong tài liệu Pain-Point gốc).
+
+### 4. Bằng chứng sẵn sàng chi trả + Lực đẩy AI mạnh nhất
+
+- **Giá cụ thể:** Simplize — nền tảng phân tích/định giá phổ biến — gói **Premium 499.000đ/tháng** (bên cạnh gói Basic miễn phí) [Vua Chứng Khoán](https://vuachungkhoang.com/simplize/) [seiofva](https://seiofva.com/simplize/) [Simplize](https://simplize.vn/).
+- **Vốn vào robo-advisor/app đầu tư nhỏ lẻ:** Finhay (từ 50.000đ), Passion Invest, Tikop, Infina được hậu thuẫn bởi TVS/DNSE — nhưng **UBCKNN 2022 đã cảnh báo** các app này có dấu hiệu hoạt động quản lý quỹ/danh mục khi chưa được cấp phép [Tuổi Trẻ](https://tuoitre.vn/than-trong-voi-ung-dung-dau-tu-finhay-passion-invest-duoc-nguoi-noi-tieng-quang-cao-20221005202138199.htm) [MarketTimes](https://markettimes.vn/dich-vu-cua-passion-invest-finhay-tikop-infina-savenow-buff-chua-duoc-uy-ban-chung-khoan-nha-nuoc-cap-phep-5149.html) — **ranh giới pháp lý quan trọng** nếu sản phẩm đưa khuyến nghị mua/bán cụ thể hoặc quản lý tiền hộ.
+- **Tailwind đặc biệt cho AI agent:** **75% người tiêu dùng Việt đã dùng Generative AI để tìm lời khuyên tài chính — tỉ lệ cao nhất khu vực**, 73% dự định tăng dùng trong 12 tháng tới (cũng cao nhất) [Sun Life 2026 — Điện tử & Ứng dụng](https://dientuungdung.vn/chi-so-nang-luc-tai-chinh-2026-kha-nang-chong-chiu-tai-chinh-cua-nguoi-viet-vuot-nhieu-thi-truong-trong-khu-vuc-16320.html). Thị trường không cần "thuyết phục dùng AI cho tài chính" — họ đã dùng rồi, câu hỏi là *dùng công cụ nào đáng tin hơn*.
+
+### 5. Định vị của Financial Insight Agent — Giáo dục có trích dẫn
+
+Thay vì cạnh tranh trực tiếp với Simplize về dữ liệu hay đưa khuyến nghị mua/bán (vướng UBCKNN), dự án chọn **Hướng C — Cổng giáo dục tài chính có trích dẫn**:
+
+- RAG trên tài liệu giáo dục/quy định chính thống, **mọi con số trong câu trả lời đều kèm citation** `[TICKER: …, nguồn: …]`.
+- Tận dụng eval harness sẵn có (`evals/` — golden dataset 36 cases, RAGAS, `citation_rate` / `numeric_match_rate` / `faithfulness`) để chứng minh độ tin cậy có kiểm chứng.
+- Là "gateway" chi phí thấp cho **nhóm 95% chưa dùng tư vấn trả phí** trước khi tính đến tính năng nhạy cảm hơn về pháp lý.
+
+> **Cam kết:** Chỉ phục vụ **giáo dục & thông tin**, không phải lời khuyên đầu tư. Mọi khuyến nghị cá nhân hóa (nếu có) sẽ gắn disclaimer và ngưỡng rủi ro do người dùng khai báo.
+
+### 6. Đánh giá mức độ "chín muồi" của Pain Point (khung 5 tiêu chí)
+
+| Tiêu chí | Câu hỏi kiểm tra | Đánh giá | Bằng chứng chính |
+|---|---|---|---|
+| **1. Quy mô & mức độ nghiêm trọng** | Bao nhiêu người chịu ảnh hưởng? Hậu quả nếu không giải quyết? | ●●●●● | 11,8–13 triệu tài khoản, +2,6 triệu/năm [Thời báo Tài chính](https://thoibaotaichinhvietnam.vn/so-luong-tai-khoan-chung-khoan-cua-nha-dau-tu-trong-nuoc-da-tang-gan-26-trieu-tai-khoan-trong-nam-2025-190337.html) |
+| **2. Tần suất & vị trí trong hành trình** | Vấn đề xảy ra thường xuyên? Người dùng đang chủ động tìm cách giải quyết? | ●●●●○ | Ra quyết định lặp lại liên tục (giá, tin, danh mục) — 12 query types của agent phủ đúng hành trình |
+| **3. Hành vi chi trả đã tồn tại** | Đã trả tiền cho giải pháp nào chưa? | ●●●●○ | Simplize 499k/tháng [Vua Chứng Khoán](https://vuachungkhoang.com/simplize/); Finhay/Tikop gọi vốn lớn [Tuổi Trẻ](https://tuoitre.vn/than-trong-voi-ung-dung-dau-tu-finhay-passion-invest-duoc-nguoi-noi-tieng-quang-cao-20221005202138199.htm) |
+| **4. Lực đẩy bên ngoài (tailwind)** | Chính sách/công nghệ nào làm thị trường "chín" nhanh? | ●●●●● | 75% đã dùng GenAI cho tư vấn tài chính — cao nhất khu vực [Điện tử & Ứng dụng](https://dientuungdung.vn/chi-so-nang-luc-tai-chinh-2026-kha-nang-chong-chiu-tai-chinh-cua-nguoi-viet-vuot-nhieu-thi-truong-trong-khu-vuc-16320.html) |
+| **5. Khoảng trống cạnh tranh** | Ai đã làm? Họ bỏ sót gì mà mình lấp được? | ●●●○○ | Simplize/TCBS mạnh dữ liệu; ít đối thủ nhấn mạnh **"độ tin cậy có kiểm chứng"** (RAGAS + citation_rate) như thế mạnh eval của dự án |
+
+**Kết luận:** Pain point **chín muồi** — đặc biệt ở tailwind AI (75%) và bằng chứng chi trả bằng VNĐ cụ thể. Đây là cơ sở để nâng cấp dự án theo hướng **giáo dục tài chính có trích dẫn** thay vì chỉ là demo ReAct.
+
+---
+
 ## ✨ Features
 
 ### Agent Pipeline (LangGraph ReAct)
@@ -261,6 +313,30 @@ Dự án chứng minh khả năng:
 - **Clean architecture**: domain → application → infrastructure
 - **Reliability**: circuit breaker, guardrails, fallback chains, caching
 - **Observability**: request_id tracing, structured logging, metrics
+
+---
+
+## 📚 Nguồn tham khảo — Pain Point Tài chính
+
+> Danh sách nguồn chính đã dùng cho section "Vì sao dự án này tồn tại?" — bạn có thể click để kiểm chứng. Số liệu thứ cấp chỉ là điểm khởi đầu; nên phỏng vấn thêm 8–12 nhà đầu tư mục tiêu để xác thực sơ cấp.
+
+**Quy mô thị trường**
+- Thời báo Tài chính Việt Nam — 11,8 triệu TK, +2,6 triệu năm 2025: https://thoibaotaichinhvietnam.vn/so-luong-tai-khoan-chung-khoan-cua-nha-dau-tu-trong-nuoc-da-tang-gan-26-trieu-tai-khoan-trong-nam-2025-190337.html
+- Vietstock — vượt 12 triệu (02/2026): https://vietstock.vn/2026/02/so-luong-tai-khoan-chung-khoan-tai-viet-nam-vuot-moc-12-trieu-830-1401652.htm
+- Báo Nhân Dân (via baomoi) — vượt 13 triệu (05/2026): https://baomoi.com/tinh-toi-het-thang-5-2026-viet-nam-chinh-thuc-vuot-moc-13-trieu-tai-khoan-chung-khoan-c55354494.epi
+
+**Hiểu biết & kế hoạch tài chính**
+- div.gov.vn — S&P Global FinLit Survey 2014, VN 24%: https://div.gov.vn/day-manh-pho-cap-tai-chinh-tai-viet-nam
+- Điện tử & Ứng dụng — Sun Life Financial Resilience Index 2026 (59% cơ bản/thấp, 75% dùng GenAI): https://dientuungdung.vn/chi-so-nang-luc-tai-chinh-2026-kha-nang-chong-chiu-tai-chinh-cua-nguoi-viet-vuot-nhieu-thi-truong-trong-khu-vuc-16320.html
+- Nhịp Cầu Đầu Tư — TVS "Sức khỏe Tài chính & Niềm tin Đầu tư 2026" (27% có kế hoạch, 95% chưa dùng tư vấn): https://nhipcaudautu.vn/tai-chinh/di-cung-f0/quan-tri-tai-san-va-nghich-ly-cua-niem-tin-3365371/
+
+**Hành vi & bằng chứng chi trả**
+- DSC — 5 sai lầm F0: https://www.dsc.com.vn/kien-thuc/nha-dau-tu-f0-la-gi
+- Prudential — Nhà đầu tư F0: https://www.prudential.com.vn/vi/blog-nhip-song-khoe/quan-ly-tai-chinh/nha-dau-tu-f0-la-gi-huong-dan-cho-nguoi-moi-bat-dau/
+- Lao Động — 90% F0 mất 90% trong 90 ngày (đọc thận trọng): https://specials.laodong.vn/90-nha-dau-tu-chung-khoan-f0-mat-90-tai-san-trong-90-ngay-dau-tien-930926/
+- Simplize — trang chủ: https://simplize.vn/ ; giải thích gói Premium 499k: https://vuachungkhoang.com/simplize/ ; https://seiofva.com/simplize/
+- Tuổi Trẻ — cảnh báo Finhay/Tikop/Passion Invest: https://tuoitre.vn/than-trong-voi-ung-dung-dau-tu-finhay-passion-invest-duoc-nguoi-noi-tieng-quang-cao-20221005202138199.htm
+- MarketTimes — UBCKNN cảnh báo pháp lý: https://markettimes.vn/dich-vu-cua-passion-invest-finhay-tikop-infina-savenow-buff-chua-duoc-uy-ban-chung-khoan-nha-nuoc-cap-phep-5149.html
 
 ---
 

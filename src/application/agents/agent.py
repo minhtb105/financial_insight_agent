@@ -33,7 +33,6 @@ from infrastructure.llm.llm_provider import LLMProvider, LLMUnavailableError
 from infrastructure.observability import get_logger
 from infrastructure.observability.logging.logger import request_id_var
 from infrastructure.observability.tracing import SpanKind, TracingCallbackHandler, get_tracer
-from application.agents.tool_registry import ALL_TOOLS
 from application.agents.hybrid_splitter import HybridQuerySplitter
 from application.agents.multi_query_runner import run_queries_parallel
 from application.agents.response_synthesizer import ResponseSynthesizer
@@ -65,12 +64,38 @@ class StockAgent:
     def __init__(self) -> None:
         load_dotenv()
 
-        self.tools = ALL_TOOLS
-        self.tool_node = CustomToolNode(self.tools)
+        # MCP auto-discovery via tools/list (spec). Falls back to in-process if MCP server unreachable.
+        try:
+            from infrastructure.mcp.loader import load_mcp_tools_sync
+
+            self.tools = load_mcp_tools_sync()
+            if not self.tools:
+                raise RuntimeError("MCP returned no tools")
+        except Exception as e:
+            logger.warning("MCP loader failed, fallback to direct mcp_server import: %s", e)
+            try:
+                from mcp_server.instance import mcp as _mcp
+                import mcp_server.tools  # noqa: F401
+
+                # Convert FastMCP tools to LangChain via fallback loader
+                from infrastructure.mcp.loader import load_mcp_tools_sync
+
+                self.tools = load_mcp_tools_sync()
+            except Exception as e2:
+                logger.error("Fallback also failed: %s", e2)
+                self.tools = []
+
+        self.tool_node = CustomToolNode(self.tools) if self.tools else CustomToolNode([])
         try:
             self.llm_provider = LLMProvider()
             self.splitter = HybridQuerySplitter(llm_provider=self.llm_provider)
-            self.llm = self.llm_provider.get_tool_calling_llm(self.tools)
+            # MCP tools carry their own descriptions/JSONSchema — no prompt tax
+            if self.tools:
+                self.llm = self.llm_provider.get_tool_calling_llm(self.tools)
+            else:
+                logger.warning("MCP tools empty — agent running without tools (prompt-only fallback)")
+                # Create a tool-less chain so LLM can still answer (degraded)
+                self.llm = self.llm_provider.get_tool_calling_llm([])
             self._synthesizer = ResponseSynthesizer(self.llm_provider)
         except LLMUnavailableError:
             logger.error("No LLM provider available — agent running in degraded mode")
@@ -166,6 +191,14 @@ class StockAgent:
         return "\n".join(lines)
 
     def _build_messages(self, state: AgentState) -> list:
+        """Split static (cacheable) vs dynamic system messages for prompt caching.
+
+        - Static: agent_system (MCP-minimal ~213t) — cacheable prefix, no per-request variance.
+        - Dynamic: Current date + memory_context — volatile, sent as second SystemMessage.
+        - Temporal: per-ticker end_date — appended after tool results as third SystemMessage.
+        This avoids mixing volatile data into the cacheable prefix (anti-pattern).
+        """
+
         from application.prompts import PromptRegistryError, get_registry
 
         messages = list(state["messages"])
@@ -182,10 +215,14 @@ class StockAgent:
             except PromptRegistryError:
                 logger.exception("agent_system prompt render failed — using empty fallback")
                 system_text = "You are a professional stock analysis assistant."
-            content = f"Current date: {current_date}\n\n{system_text}"
+            # 1) Static cacheable prefix — never includes date/memory
+            static_msg = SystemMessage(content=system_text)
+            # 2) Dynamic per-request context — volatile, not cached
+            dynamic_parts = [f"Current date: {current_date}"]
             if memory_context:
-                content = f"{content}\n\nContext from past interactions:\n{memory_context}"
-            messages = [SystemMessage(content=content), *messages]
+                dynamic_parts.append(f"Context from past interactions:\n{memory_context}")
+            dynamic_msg = SystemMessage(content="\n\n".join(dynamic_parts))
+            messages = [static_msg, dynamic_msg, *messages]
         return messages
 
     def _invoke_llm(self, node_logger, messages: list, rid: str) -> tuple:
@@ -343,6 +380,17 @@ class StockAgent:
                     "issues": [str(i) for i in validation_result.issues],
                 },
             )
+
+        # TT135 safety layer (after guardrails)
+        try:
+            from infrastructure.rag.safety import check_and_sanitize
+
+            sanitized_text, blocked = check_and_sanitize(response.content)
+            if blocked or sanitized_text != response.content:
+                node_logger.warning("RAG safety sanitized", extra={"request_id": rid, "blocked": blocked})
+                response = AIMessage(content=sanitized_text)
+        except Exception:
+            pass
 
         return {"messages": [response]}
 

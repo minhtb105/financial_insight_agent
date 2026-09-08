@@ -8,6 +8,7 @@ import time
 
 from fastapi import FastAPI, APIRouter, Request, HTTPException
 from interfaces.api.routes.traces import router as traces_router
+from interfaces.api.routes.rag import router as rag_router
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
@@ -162,8 +163,22 @@ async def lifespan(_app: FastAPI):
     if agent is None:
         _request_logger.warning("Starting server without agent — /ask-stream endpoint will return 503")
 
+    # RAG weekly scheduler (CN 02:00 Asia/Ho_Chi_Minh)
+    try:
+        from infrastructure.rag.scheduler import start_scheduler
+
+        start_scheduler()
+    except Exception as e:
+        _request_logger.warning("RAG scheduler init failed: %s", e)
+
     yield
 
+    try:
+        from infrastructure.rag.scheduler import stop_scheduler
+
+        stop_scheduler()
+    except Exception:
+        pass
     shutdown_deps()
 
 
@@ -468,4 +483,5 @@ async def ping():
     )
 
 api_router.include_router(traces_router)
+api_router.include_router(rag_router)
 app.include_router(api_router)

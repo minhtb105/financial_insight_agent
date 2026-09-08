@@ -1,34 +1,100 @@
 services:
-  app:
+  mcp_server:
     build:
       context: .
       dockerfile: Dockerfile
       target: production
-    container_name: talenthub-ai-app
+    container_name: finsight-mcp
     ports:
-      - "${APP_EXTERNAL_PORT:-8000}:${APP_PORT:-8000}"
+      - "${MCP_EXTERNAL_PORT:-8001}:8001"
     env_file:
       - .env
     environment:
-      - APP_PORT=${APP_PORT:-8000}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
-      - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      - PYTHONPATH=/app/src
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8001
       - QDRANT_HOST=${QDRANT_HOST:-qdrant}
       - QDRANT_PORT=${QDRANT_PORT:-6333}
       - QDRANT_API_KEY=${QDRANT_API_KEY:-}
-      - QDRANT_CANDIDATES_COLLECTION=${QDRANT_CANDIDATES_COLLECTION:-talenthub_candidates}
-      - QDRANT_JOBS_COLLECTION=${QDRANT_JOBS_COLLECTION:-talenthub_jobs}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     depends_on:
       qdrant:
         condition: service_started
     networks:
-      - talenthub-network
+      - finsight-network
     restart: unless-stopped
-    command: uvicorn api.app:app --host 0.0.0.0 --port ${APP_PORT:-8000} --workers 4
+    command: python -m mcp_server.server --transport streamable-http --host 0.0.0.0 --port 8001
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/mcp"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: finsight-backend
+    ports:
+      - "${APP_EXTERNAL_PORT:-8000}:${APP_PORT:-8000}"
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app/src
+      - APP_PORT=${APP_PORT:-8000}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000,http://frontend:3000}
+      - ENABLE_RAG_SCHEDULER=${ENABLE_RAG_SCHEDULER:-true}
+      - ADMIN_API_KEY=${ADMIN_API_KEY:-}
+      - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      - MCP_URL=http://mcp_server:8001/mcp
+      - MCP_TRANSPORT=streamable-http
+      - QDRANT_HOST=${QDRANT_HOST:-qdrant}
+      - QDRANT_PORT=${QDRANT_PORT:-6333}
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      mcp_server:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    networks:
+      - finsight-network
+    restart: unless-stopped
+    command: uvicorn interfaces.api.app:app --host 0.0.0.0 --port ${APP_PORT:-8000} --workers 2
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${APP_PORT:-8000}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: finsight-frontend
+    ports:
+      - "${FRONTEND_EXTERNAL_PORT:-3000}:3000"
+    env_file:
+      - .env
+    environment:
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-finsight-dev-secret-change-me-in-prod}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+      - API_URL=http://backend:${APP_PORT:-8000}
+      - NEXT_PUBLIC_API_URL=http://localhost:${APP_EXTERNAL_PORT:-8000}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - finsight-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -43,7 +109,7 @@ services:
     volumes:
       - qdrant_storage:/qdrant/storage
     networks:
-      - talenthub-network
+      - finsight-network
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
@@ -53,7 +119,7 @@ services:
       start_period: 30s
 
 networks:
-  talenthub-network:
+  finsight-network:
     driver: bridge
 
 volumes:

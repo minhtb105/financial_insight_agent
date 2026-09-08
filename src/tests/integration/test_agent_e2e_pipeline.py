@@ -107,7 +107,7 @@ def _build_agent(mock_tools, mock_llm, guardrails_config=None):
 
         mock_mem_fn.return_value = None
 
-        with patch("application.agents.agent.ALL_TOOLS", mock_tools):
+        with patch("infrastructure.mcp.loader.load_mcp_tools_sync", return_value=mock_tools):
             from application.agents.agent import StockAgent
 
             agent = StockAgent()

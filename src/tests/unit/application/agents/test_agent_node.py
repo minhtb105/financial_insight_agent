@@ -10,7 +10,7 @@ from infrastructure.llm.llm_provider import LLMUnavailableError
 def _make_agent(llm_available=True):
     with (
         patch("application.agents.agent.LLMProvider") as mock_provider_cls,
-        patch("application.agents.agent.ALL_TOOLS", []),
+        patch("infrastructure.mcp.loader.load_mcp_tools_sync", return_value=[]),
         patch("application.agents.agent.CustomToolNode"),
         patch("application.agents.agent.ResponseSynthesizer"),
         patch("application.agents.agent.HybridQuerySplitter"),

@@ -15,11 +15,19 @@ dependencies = [
     "langchain-openai>=0.3.0,<0.4",
     "langchain-groq>=0.3.0,<0.4",
     "langgraph>=0.5.0",
+    "langchain-text-splitters>=0.3.0",
     "pandas>=2.3.3",
     "numpy>=2.2.6",
     "matplotlib>=3.10.7",
     "tqdm>=4.67.1",
     "requests>=2.30.5",
+    "beautifulsoup4>=4.12.0",
+    "html2text>=2024.2.26",
+    "qdrant-client>=1.11.0",
+    "openai>=1.50.0",
+    "apscheduler>=3.10.0",
+    "pymupdf>=1.24.0",
+    "pdfminer.six>=20221105",
     "fastapi>=0.121.1",
     "pydantic>=2.0.0",
     "python-dotenv>=1.0.0",
@@ -28,6 +36,11 @@ dependencies = [
     "vnstock>=3.0.0,<4",
     "sentence-transformers>=2.2.0",
     "PyYAML>=6.0.1",
+    "mcp>=1.9.0",
+    "langchain-mcp-adapters>=0.3.0",
+    "uvicorn>=0.30.0",
+    "starlette>=0.38.0",
+    "anyio>=4.0.0",
 ]
 
 [project.optional-dependencies]
@@ -127,7 +140,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["shared", "domain", "application", "infrastructure", "interfaces"]
+known-first-party = ["shared", "domain", "application", "infrastructure", "interfaces", "mcp_server"]
 force-single-line = false
 force-sort-within-sections = true
 lines-after-imports = 2

@@ -5,10 +5,12 @@ from collections.abc import Callable
 from typing import Any
 from datetime import datetime, timezone
 from pathlib import Path
+import logging
 from shared.constants import PORTFOLIO_TTL_HOURS
-from infrastructure.cache import get_cache_manager
-from infrastructure.cache.cache_keys import make_cache_key
-from infrastructure.api_clients.vn_stock_client import VNStockClient
+from shared.ports.cache_port import CachePort
+from shared.ports.market_data_port import MarketDataPort
+from shared.ports.company_port import CompanyPort
+from shared.utils.cache_keys import make_cache_key
 from shared.base_service import BaseService
 
 _PORTFOLIO_SECTOR_CACHE_HOURS = 4
@@ -102,12 +104,13 @@ _PORTFOLIO_FIELD_HANDLERS: dict[str, Callable[["PortfolioService"], dict[str, An
 
 
 class PortfolioService(BaseService):
-    def __init__(self):
-        """Khởi tạo PortfolioService."""
-        super().__init__("PortfolioService")
+    def __init__(self, cache: CachePort, market_data: MarketDataPort, company_port: CompanyPort) -> None:
+        """Khởi tạo PortfolioService — strict DI."""
+        super().__init__("PortfolioService", cache, market_data)
+        self._company = company_port
 
     def _fetch_price(self, ticker: str, quantity: int, today_str: str) -> dict[str, Any]:
-        cache = self._get_cache_manager()
+        cache = self._cache
         try:
             cache_key = make_cache_key(
                 "portfolio_price", ticker, today_str, today_str, interval="1d"
@@ -116,14 +119,10 @@ class PortfolioService(BaseService):
             if cached_price is not None:
                 price = cached_price
             else:
-                client = VNStockClient(ticker=ticker)
-                current_price = client.fetch_trading_data(
-                    start=today_str, end=today_str, interval="1d"
-                )
-
-                if current_price is None or current_price.empty:
+                result = self._market_data.get_price_data(ticker, today_str, today_str)
+                if result is None or "error" in result or not result.get("data"):
                     return {"error": f"No price data for {ticker}"}
-                price = float(current_price["close"].iloc[-1])
+                price = float(result["data"][-1]["close"])
                 if cache:
                     cache.set(cache_key, price, ttl_hours=PORTFOLIO_TTL_HOURS)
 
@@ -134,7 +133,7 @@ class PortfolioService(BaseService):
             return {"error": str(e)}
 
     def _fetch_sector_and_price(self, ticker: str, quantity: int, today_str: str) -> dict[str, Any]:
-        cache = self._get_cache_manager()
+        cache = self._cache
         try:
             sector_cache_key = make_cache_key("portfolio_sector", ticker)
             cached_sector = cache.get(sector_cache_key) if cache else None
@@ -147,13 +146,10 @@ class PortfolioService(BaseService):
             if cached_price is not None:
                 price = cached_price
             else:
-                client = VNStockClient(ticker=ticker)
-                current_price = client.fetch_trading_data(
-                    start=today_str, end=today_str, interval="1d"
-                )
-                if current_price is None or current_price.empty:
+                result = self._market_data.get_price_data(ticker, today_str, today_str)
+                if result is None or "error" in result or not result.get("data"):
                     return {"error": f"No price data for {ticker}"}
-                price = float(current_price["close"].iloc[-1])
+                price = float(result["data"][-1]["close"])
                 if cache:
                     cache.set(sector_cache_key, sector, ttl_hours=_PORTFOLIO_SECTOR_CACHE_HOURS)
                     cache.set(price_cache_key, price, ttl_hours=PORTFOLIO_TTL_HOURS)
@@ -332,13 +328,11 @@ class PortfolioService(BaseService):
         except Exception as e:
             return {"error": str(e)}
 
+def handle_portfolio_query(field: str = "portfolio_summary",
+    portfolio: dict[str, int] | None = None,) -> dict[str, Any]:
+    from shared.service_registry import get_service
+    svc = get_service("portfolio")
+    if svc is None:
+        raise RuntimeError("Service 'portfolio' not initialized — call init_deps()")
+    return svc.handle_query(field=field, portfolio=portfolio)
 
-_portfolio_service = PortfolioService()
-
-
-def handle_portfolio_query(
-    field: str = "portfolio_summary",
-    portfolio: dict[str, int] | None = None,
-) -> dict[str, Any]:
-    """Manage portfolio: get value, performance, or sector allocation."""
-    return _portfolio_service.handle_query(requested_field=field, portfolio=portfolio)

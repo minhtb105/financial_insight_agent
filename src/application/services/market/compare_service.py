@@ -1,12 +1,15 @@
+import logging
 from typing import Any
 import math
 from shared.base_service import BaseService
+from shared.ports.market_data_port import MarketDataPort
+from shared.ports.cache_port import CachePort
 
 
 class CompareService(BaseService):
-    def __init__(self) -> None:
-        """Khởi tạo CompareService."""
-        super().__init__("CompareService")
+    def __init__(self, cache: CachePort, market_data: MarketDataPort) -> None:
+        """Khởi tạo CompareService — strict DI."""
+        super().__init__("CompareService", cache, market_data)
 
     def handle_query(
         self,
@@ -63,30 +66,9 @@ class CompareService(BaseService):
 
 
 
-_compare_service = CompareService()
 
 
-def handle_compare_query(
-    tickers: list[str],
-    compare_with: list[str],
-    field: str = "close",
-    days: int | None = None,
-    weeks: int | None = None,
-    months: int | None = None,
-    start_date: str | None = None,
-    end_date: str | None = None,
-) -> dict[str, Any]:
-    """Compare price data between main tickers and reference tickers."""
-    return _compare_service.handle_query(
-        tickers=tickers,
-        compare_with=compare_with,
-        field=field,
-        days=days,
-        weeks=weeks,
-        months=months,
-        start_date=start_date,
-        end_date=end_date,
-    )
+
 
 
 def perform_comparison(
@@ -231,3 +213,18 @@ def calculate_percentage_difference(
                 }
 
     return diff
+
+def handle_compare_query(tickers: list[str],
+    compare_with: list[str],
+    field: str = "close",
+    days: int | None = None,
+    weeks: int | None = None,
+    months: int | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,) -> dict[str, Any]:
+    from shared.service_registry import get_service
+    svc = get_service("compare")
+    if svc is None:
+        raise RuntimeError("Service 'compare' not initialized — call init_deps()")
+    return svc.handle_query(tickers=tickers, compare_with=compare_with, field=field, days=days, weeks=weeks, months=months, start_date=start_date, end_date=end_date)
+

@@ -1,14 +1,17 @@
+import logging
 from typing import Any
 
 from shared.utils.time_processor import TimeProcessor
 from domain.schemas.price import PriceRecord, PriceResult
 from shared.base_service import BaseService
+from shared.ports.market_data_port import MarketDataPort
+from shared.ports.cache_port import CachePort
 
 
 class PriceService(BaseService):
-    def __init__(self) -> None:
-        """Khởi tạo PriceService."""
-        super().__init__("price_service")
+    def __init__(self, cache: CachePort, market_data: MarketDataPort) -> None:
+        """Khởi tạo PriceService — strict DI."""
+        super().__init__("price_service", cache, market_data)
 
     def handle_query(
         self,
@@ -69,14 +72,12 @@ class PriceService(BaseService):
             Dict chứa dữ liệu giá hoặc lỗi.
         """
         try:
-            from shared.price_data import get_price_data
-
             time_processor = TimeProcessor()
             time_params = time_processor.process_time_params(parsed)
             start_date = time_params["start_date"]
             end_date = time_params["end_date"]
 
-            raw = get_price_data(ticker, start_date, end_date)
+            raw = self._market_data.get_price_data(ticker, start_date, end_date)
             if "error" in raw:
                 return raw
 
@@ -106,39 +107,16 @@ class PriceService(BaseService):
             self.logger.error(f"Failed to fetch price for {ticker}: {e}")
             return {"error": str(e)}
 
-
-_price_service = PriceService()
-
-
-def handle_price_query(
-    tickers: list[str],
+def handle_price_query(tickers: list[str],
     field: str = "close",
     days: int | None = None,
     weeks: int | None = None,
     months: int | None = None,
     start_date: str | None = None,
-    end_date: str | None = None,
-) -> dict[str, Any]:
-    """Truy vấn dữ liệu giá cho một hoặc nhiều mã chứng khoán.
+    end_date: str | None = None,) -> dict[str, Any]:
+    from shared.service_registry import get_service
+    svc = get_service("price")
+    if svc is None:
+        raise RuntimeError("Service 'price' not initialized — call init_deps()")
+    return svc.handle_query(tickers=tickers, field=field, days=days, weeks=weeks, months=months, start_date=start_date, end_date=end_date)
 
-    Args:
-        tickers: Danh sách mã chứng khoán.
-        field: Trường giá cần lấy.
-        days: Số ngày gần nhất.
-        weeks: Số tuần gần nhất.
-        months: Số tháng gần nhất.
-        start_date: Ngày bắt đầu (YYYY-MM-DD).
-        end_date: Ngày kết thúc (YYYY-MM-DD).
-
-    Returns:
-        Dict chứa dữ liệu giá cho từng mã.
-    """
-    return _price_service.handle_query(
-        tickers=tickers,
-        field=field,
-        days=days,
-        weeks=weeks,
-        months=months,
-        start_date=start_date,
-        end_date=end_date,
-    )

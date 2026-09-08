@@ -1,12 +1,14 @@
+import logging
 from typing import Any
 from shared.utils.calculations import calculate_std_dev
 from shared.base_service import BaseService
+from shared.ports.market_data_port import MarketDataPort
+from shared.ports.cache_port import CachePort
 
 
 class AggregateService(BaseService):
-    def __init__(self) -> None:
-        """Khởi tạo AggregateService."""
-        super().__init__("aggregate_service")
+    def __init__(self, cache: CachePort, market_data: MarketDataPort) -> None:
+        super().__init__("aggregate_service", cache, market_data)
 
     def handle_query(
         self,
@@ -61,30 +63,9 @@ class AggregateService(BaseService):
 
 
 
-_aggregate_service = AggregateService()
 
 
-def handle_aggregate_query(
-    tickers: list[str],
-    field: str = "close",
-    aggregate_fn: str = "mean",
-    days: int | None = None,
-    weeks: int | None = None,
-    months: int | None = None,
-    start_date: str | None = None,
-    end_date: str | None = None,
-) -> dict[str, Any]:
-    """Aggregate price data across tickers (mean/sum/median/std/min/max)."""
-    return _aggregate_service.handle_query(
-        tickers=tickers,
-        field=field,
-        aggregate=aggregate_fn,
-        days=days,
-        weeks=weeks,
-        months=months,
-        start_date=start_date,
-        end_date=end_date,
-    )
+
 
 
 def perform_aggregation(
@@ -184,3 +165,18 @@ def perform_aggregation(
     }
 
     return aggregation
+
+def handle_aggregate_query(tickers: list[str],
+    field: str = "close",
+    aggregate_fn: str = "mean",
+    days: int | None = None,
+    weeks: int | None = None,
+    months: int | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,) -> dict[str, Any]:
+    from shared.service_registry import get_service
+    svc = get_service("aggregate")
+    if svc is None:
+        raise RuntimeError("Service 'aggregate' not initialized — call init_deps()")
+    return svc.handle_query(tickers=tickers, field=field, aggregate_fn=aggregate_fn, days=days, weeks=weeks, months=months, start_date=start_date, end_date=end_date)
+

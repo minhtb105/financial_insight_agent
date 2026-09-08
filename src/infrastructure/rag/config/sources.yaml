@@ -1,0 +1,89 @@
+# RAG Source Registry — priority 1 cao nhất (VBPL), 5 thấp nhất
+# Weekly full replace vào 02:00 CN (Asia/Ho_Chi_Minh) — xem scheduler.py
+sources:
+  - id: vbpl_24_2025
+    name: "Luật Chứng khoán hợp nhất 24/VBHN-VPQH (Luật 54/2019 + sửa đổi 56/2024)"
+    url: "https://vbpl.vn/TW/Pages/vbpq-van-ban-goc.aspx?ItemID=175993"
+    fallback_url: "https://vbpl.vn/FileDownload.aspx?FileName=24-VBHN-VPQH.pdf"
+    type: pdf
+    priority: 1
+    enabled: true
+    parser: vbpl
+    description: "Văn bản hợp nhất Luật Chứng khoán — nền pháp lý gốc, ưu tiên cao nhất khi xung đột"
+
+  - id: tt_96_2020
+    name: "Thông tư 96/2020/TT-BTC hướng dẫn công bố thông tin"
+    url: "https://vbpl.vn/TW/Pages/vbpq-van-ban-goc.aspx?ItemID=145756"
+    type: pdf
+    priority: 2
+    enabled: true
+    parser: generic_pdf
+
+  - id: tt_135_2025
+    name: "Thông tư 135/2025/TT-BTC quy định hành nghề chứng khoán (hiệu lực 2/2026)"
+    url: "https://thuvienphapluat.vn/van-ban/Chung-khoan/Thong-tu-135-2025-TT-BTC-quy-dinh-hoat-dong-chung-khoan-651123.aspx"
+    type: html
+    priority: 2
+    enabled: true
+    parser: generic_html
+    safety_layer: true  # dùng cho lọc khuyến nghị mua/bán cụ thể
+
+  - id: ssi_knowledge
+    name: "SSI Trung tâm kiến thức"
+    url: "https://www.ssi.com.vn/khach-hang-ca-nhan/trung-tam-kien-thuc"
+    type: html_crawl
+    priority: 4
+    enabled: true
+    parser: ssi
+    crawl:
+      max_pages: 50
+      respect_robots: true
+      delay_seconds: 1.5
+
+  - id: hnx_docs
+    name: "HNX - Tài liệu hướng dẫn"
+    url: "https://www.hnx.vn/vi-vn/huong-dan.html"
+    type: html_crawl
+    priority: 3
+    enabled: true
+    parser: hnx
+    crawl:
+      max_pages: 30
+      delay_seconds: 1.5
+
+  - id: hose_docs
+    name: "HOSE - Quy định & hướng dẫn"
+    url: "https://www.hsx.vn/Modules/Listed/Web/HuongDan"
+    type: html_crawl
+    priority: 3
+    enabled: true
+    parser: hose
+    crawl:
+      max_pages: 30
+      delay_seconds: 1.5
+
+  - id: cfa_investor_education
+    name: "CFA Institute Investor Education (dịch/lược)"
+    url: "https://www.cfainstitute.org/en/membership/professional-development/refresher-readings"
+    type: html_crawl
+    priority: 5
+    enabled: false  # bật khi có bản dịch chính thức
+    parser: generic_html
+
+settings:
+  rate_limit:
+    default_delay_seconds: 1.5
+    respect_robots: true
+    user_agent: "FinancialInsightAgent/1.0 (+https://finsight.vn/bot)"
+  storage:
+    raw_dir: "data/rag/raw"
+    processed_dir: "data/rag/processed"
+    manifests_dir: "data/rag/manifests"
+    registry_db: "data/rag/registry.db"
+  vector_store:
+    host: "${QDRANT_HOST:-qdrant}"
+    port: 6333
+    alias: "finsight_knowledge"
+    embedding_model: "text-embedding-3-small"
+    embedding_dim: 1536
+    backup_keep_days: 7

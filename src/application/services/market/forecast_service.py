@@ -1,12 +1,13 @@
+import logging
 from typing import Any
 from statistics import mean, stdev
 from datetime import datetime, timedelta, timezone
 
 from shared.constants import FORECAST_TTL_HOURS
-from infrastructure.api_clients.vn_stock_client import VNStockClient
-from infrastructure.cache import get_cache_manager
-from infrastructure.cache.cache_keys import make_cache_key
+from shared.utils.cache_keys import make_cache_key
 from shared.base_service import BaseService
+from shared.ports.market_data_port import MarketDataPort
+from shared.ports.cache_port import CachePort
 
 _TIMEFRAME_DAYS = {
     "1d": 1,
@@ -18,9 +19,8 @@ _TIMEFRAME_DAYS = {
 
 
 class ForecastService(BaseService):
-    def __init__(self) -> None:
-        """Khởi tạo ForecastService."""
-        super().__init__("forecast_service")
+    def __init__(self, cache: CachePort, market_data: MarketDataPort) -> None:
+        super().__init__("forecast_service", cache, market_data)
 
     def handle_query(
         self,
@@ -58,21 +58,22 @@ class ForecastService(BaseService):
         Returns:
             Dict chứa kết quả dự báo hoặc lỗi.
         """
-        cache = get_cache_manager()
+        cache = self._cache
         cache_key = make_cache_key("forecast", ticker, timeframe)
         cached = cache.get(cache_key) if cache else None
         if cached is not None:
             return cached
 
-        client = VNStockClient(ticker=ticker)
         end_date = datetime.now(timezone.utc)
         lookback = _TIMEFRAME_DAYS.get(timeframe, 180)
         min_lookback = max(lookback, 20)
         start_date = end_date - timedelta(days=min_lookback)
-        data = client.fetch_trading_data(
-            start=start_date.strftime("%Y-%m-%d"), end=end_date.strftime("%Y-%m-%d"), interval="1d"
-        )
+        result = self._market_data.get_price_data(ticker, start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
+        if result is None or "error" in result or not result.get("data"):
+            return {"error": "Insufficient historical data for forecast"}
+        import pandas as pd
 
+        data = pd.DataFrame(result["data"])
         if data is None or data.empty or len(data) < 20:
             return {"error": "Insufficient historical data for forecast"}
 
@@ -113,21 +114,11 @@ class ForecastService(BaseService):
             cache.set(cache_key, forecast, ttl_hours=FORECAST_TTL_HOURS)
         return forecast
 
+def handle_forecast_query(tickers: list[str],
+    timeframe: str = "1w",) -> dict[str, Any]:
+    from shared.service_registry import get_service
+    svc = get_service("forecast")
+    if svc is None:
+        raise RuntimeError("Service 'forecast' not initialized — call init_deps()")
+    return svc.handle_query(tickers=tickers, timeframe=timeframe)
 
-_forecast_service = ForecastService()
-
-
-def handle_forecast_query(
-    tickers: list[str],
-    timeframe: str = "1w",
-) -> dict[str, Any]:
-    """Truy vấn dự báo giá cho một hoặc nhiều mã chứng khoán.
-
-    Args:
-        tickers: Danh sách mã chứng khoán.
-        timeframe: Khung thời gian dự báo (vd: "1w", "1m").
-
-    Returns:
-        Dict chứa kết quả dự báo cho từng mã.
-    """
-    return _forecast_service.handle_query(tickers=tickers, timeframe=timeframe)
