@@ -102,7 +102,7 @@ services:
 
   qdrant:
     image: qdrant/qdrant:latest
-    container_name: talenthub-ai-qdrant
+    container_name: finsight-qdrant
     ports:
       - "${QDRANT_EXTERNAL_PORT:-6333}:6333"
       - "${QDRANT_GRPC_PORT:-6334}:6334"

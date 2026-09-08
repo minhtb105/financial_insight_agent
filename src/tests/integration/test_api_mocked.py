@@ -1,6 +1,4 @@
 import json
-import pytest
-from fastapi.testclient import TestClient
 
 
 def _parse_sse_events(response) -> list[dict]:

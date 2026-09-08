@@ -207,7 +207,6 @@ class FactVerifier:
         for ticker, entries in tool_data.items():
             for entry in entries:
                 for nf in numbers_found:
-                    field = entry["field"]
                     if abs(entry["value"] - nf["value"]) / max(abs(nf["value"]), 1) < 0.001:
                         break
 

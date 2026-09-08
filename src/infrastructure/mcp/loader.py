@@ -81,7 +81,6 @@ def load_mcp_tools_sync() -> list[Any]:
             # Simpler: use langchain_mcp_adapters.tools.load_mcp_tools on a dummy session
             # Fallback: build LangChain StructuredTool from mcp tool definitions directly
             from langchain_core.tools import StructuredTool
-            from pydantic import create_model
 
             tools: list[Any] = []
             for name, tool in mcp_instance._tool_manager._tools.items():

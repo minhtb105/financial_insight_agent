@@ -1,10 +1,23 @@
-import os
+"""Backward compat re-export — canonical TTLs live in shared.config."""
 
-PRICE_TTL_HOURS = float(os.getenv("PRICE_TTL_HOURS", "0.5"))
-INDICATOR_TTL_HOURS = 0.5
-FORECAST_TTL_HOURS = 1
-NEWS_TTL_HOURS = 1
-COMPANY_TTL_HOURS = 4
-RATIO_TTL_HOURS = 2
-SECTOR_TTL_HOURS = 2
-PORTFOLIO_TTL_HOURS = 0.25
+from shared.config import (
+    COMPANY_TTL_HOURS,
+    FORECAST_TTL_HOURS,
+    INDICATOR_TTL_HOURS,
+    NEWS_TTL_HOURS,
+    PORTFOLIO_TTL_HOURS,
+    PRICE_TTL_HOURS,
+    RATIO_TTL_HOURS,
+    SECTOR_TTL_HOURS,
+)
+
+__all__ = [
+    "PRICE_TTL_HOURS",
+    "INDICATOR_TTL_HOURS",
+    "FORECAST_TTL_HOURS",
+    "NEWS_TTL_HOURS",
+    "COMPANY_TTL_HOURS",
+    "RATIO_TTL_HOURS",
+    "SECTOR_TTL_HOURS",
+    "PORTFOLIO_TTL_HOURS",
+]

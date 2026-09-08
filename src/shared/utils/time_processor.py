@@ -4,6 +4,8 @@ from typing import Any
 
 class TimeProcessor:
     def __init__(self, now: datetime | None = None):
+        if now is not None and now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
         self._now = now or datetime.now(timezone.utc)
 
     def process_time_params(self, parsed_query: dict[str, Any]) -> dict[str, Any]:

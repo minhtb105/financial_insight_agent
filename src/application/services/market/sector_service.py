@@ -99,8 +99,5 @@ class SectorService(BaseService):
 
 
 def handle_sector_query(sector: str, metric: str = "performance", timeframe: str = "1w") -> dict[str, Any]:
-    from shared.service_registry import get_service
-    svc = get_service("sector")
-    if svc is None:
-        raise RuntimeError("Service 'sector' not initialized — call init_deps()")
-    return svc.handle_query(sector=sector, metric=metric, timeframe=timeframe)
+    from shared.service_helpers import call_service
+    return call_service("sector", sector=sector, metric=metric, timeframe=timeframe)

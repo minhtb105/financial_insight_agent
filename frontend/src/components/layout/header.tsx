@@ -20,7 +20,28 @@ export function Header() {
   const [health, setHealth] = useState<"ok" | "down" | "loading">("loading")
 
   useEffect(() => {
-    fetch("/api/health").then((r) => r.json()).then((j) => setHealth(j.status === "ok" || j.agent_ready !== false ? "ok" : "down")).catch(() => setHealth("down"))
+    let cancelled = false
+    const check = () => {
+      fetch("/api/health")
+        .then((r) => r.json())
+        .then((j) => {
+          if (!cancelled) setHealth(j.status === "ok" || j.agent_ready !== false ? "ok" : "down")
+        })
+        .catch(() => {
+          if (!cancelled) setHealth("down")
+        })
+    }
+    check()
+    const id = setInterval(check, 30_000)
+    const onVis = () => {
+      if (document.visibilityState === "visible") check()
+    }
+    document.addEventListener("visibilitychange", onVis)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+      document.removeEventListener("visibilitychange", onVis)
+    }
   }, [])
 
   return (

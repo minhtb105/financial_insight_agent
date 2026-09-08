@@ -5,7 +5,6 @@ from collections.abc import Callable
 from typing import Any
 from datetime import datetime, timezone
 from pathlib import Path
-import logging
 from shared.constants import PORTFOLIO_TTL_HOURS
 from shared.ports.cache_port import CachePort
 from shared.ports.market_data_port import MarketDataPort
@@ -330,9 +329,6 @@ class PortfolioService(BaseService):
 
 def handle_portfolio_query(field: str = "portfolio_summary",
     portfolio: dict[str, int] | None = None,) -> dict[str, Any]:
-    from shared.service_registry import get_service
-    svc = get_service("portfolio")
-    if svc is None:
-        raise RuntimeError("Service 'portfolio' not initialized — call init_deps()")
-    return svc.handle_query(field=field, portfolio=portfolio)
+    from shared.service_helpers import call_service
+    return call_service("portfolio", field=field, portfolio=portfolio)
 

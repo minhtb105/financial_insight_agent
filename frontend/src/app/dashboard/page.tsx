@@ -16,7 +16,7 @@ export default async function DashboardPage() {
     <div className="container mx-auto p-4 md:p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground">Tổng quan thị trường — dữ liệu mock, sẵn sàng nối FastAPI tools</p>
+        <p className="text-muted-foreground">Tổng quan thị trường — dữ liệu thực qua BFF /api/market/* (fallback mock khi offline)</p>
       </div>
 
       <Tabs defaultValue="price" className="w-full">
@@ -42,11 +42,6 @@ export default async function DashboardPage() {
         <TabsContent value="chart" className="space-y-4">
           <PriceChart />
           <RSIChart />
-          <Card>
-            <CardContent className="p-4 text-sm text-muted-foreground">
-              Sau khi nối backend, thay <code>MOCK_CANDLES</code> bằng kết quả từ <code>calculate_technical_indicator</code> và <code>get_stock_price</code>. Gợi ý: tạo BFF <code>/api/market/candles?ticker=VCB</code> proxy tới VNStockClient.
-            </CardContent>
-          </Card>
         </TabsContent>
 
         <TabsContent value="portfolio" className="space-y-4">

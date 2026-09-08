@@ -23,6 +23,12 @@ services:
       - ./src:/app/src:cached
       - /app/src/__pycache__
     command: python -m mcp_server.server --transport streamable-http --host 0.0.0.0 --port 8001
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/mcp"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
     depends_on:
       qdrant:
         condition: service_started
@@ -61,9 +67,15 @@ services:
       - ./src:/app/src:cached
       - ./frontend:/app/frontend:cached
       - /app/src/__pycache__
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${APP_PORT:-8000}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     depends_on:
       mcp_server:
-        condition: service_started
+        condition: service_healthy
       qdrant:
         condition: service_started
     networks:
@@ -94,7 +106,7 @@ services:
 
   qdrant:
     image: qdrant/qdrant:latest
-    container_name: talenthub-ai-qdrant-dev
+    container_name: finsight-qdrant-dev
     ports:
       - "${QDRANT_EXTERNAL_PORT:-6333}:6333"
       - "${QDRANT_GRPC_PORT:-6334}:6334"
@@ -102,6 +114,12 @@ services:
       - qdrant_storage_dev:/qdrant/storage
     networks:
       - finsight-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
 networks:
   finsight-network:

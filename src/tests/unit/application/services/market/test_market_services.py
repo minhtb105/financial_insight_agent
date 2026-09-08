@@ -141,7 +141,6 @@ def test_indicator_sma():
 
 def test_indicator_rsi():
     from application.services.market.indicator_service import IndicatorService
-    import pandas as pd
     from datetime import datetime
     mock_md = MagicMock(spec=MarketDataPort)
     dates = [datetime(2026, 1, d) for d in range(1, 20)]

@@ -1,5 +1,7 @@
 "use client"
-import { useEffect, useRef, useState } from "react"
+/* eslint-disable react-hooks/exhaustive-deps -- intentional mount-only effects for localStorage */
+import { useEffect, useRef } from "react"
+import { useSession } from "next-auth/react"
 import { useChatStore } from "@/store/chatStore"
 import { useChatStream } from "@/hooks/useChatStream"
 import { MessageBubble } from "./MessageBubble"
@@ -20,21 +22,15 @@ const SUGGESTIONS = [
 export function ChatContainer() {
   const { messages, isStreaming, input, setInput, clear } = useChatStore()
   const { send, stop } = useChatStream()
+  const { data: session } = useSession()
   const bottomRef = useRef<HTMLDivElement>(null)
-  const [localInput, setLocalInput] = useState(input)
-  // sync from store only on mount — avoid cascading effect
-  const hasSyncedRef = useRef(false)
-  useEffect(() => {
-    if (!hasSyncedRef.current && input) {
-      setLocalInput(input)
-      hasSyncedRef.current = true
-    }
-  }, [input])
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }) }, [messages])
 
-  // Persist per-user history in localStorage
+  // Per-user localStorage key to avoid demo vs admin contamination
+  const storageKey = `finsight-chat:${(session?.user as { email?: string })?.email ?? "default"}`
+
   useEffect(() => {
-    const key = "finsight-chat"
+    const key = storageKey
     const saved = localStorage.getItem(key)
     if (saved) {
       try {
@@ -44,15 +40,14 @@ export function ChatContainer() {
         }
       } catch {}
     }
-  }, [])
+  }, [storageKey])
   useEffect(() => {
-    if (messages.length > 0) localStorage.setItem("finsight-chat", JSON.stringify(messages.slice(-100)))
-  }, [messages.length])
+    if (messages.length > 0) localStorage.setItem(storageKey, JSON.stringify(messages.slice(-100)))
+  }, [messages.length, storageKey])
 
   const handleSend = async () => {
-    const q = localInput.trim()
+    const q = input.trim()
     if (!q || isStreaming) return
-    setLocalInput("")
     setInput("")
     await send(q)
   }
@@ -71,7 +66,7 @@ export function ChatContainer() {
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
               {SUGGESTIONS.map((s) => (
-                <Card key={s} className="p-3 cursor-pointer hover:bg-accent transition-colors" onClick={() => setLocalInput(s)}>
+                <Card key={s} className="p-3 cursor-pointer hover:bg-accent transition-colors" onClick={() => setInput(s)}>
                   <p className="text-sm">{s}</p>
                 </Card>
               ))}
@@ -92,8 +87,8 @@ export function ChatContainer() {
         <div className="mx-auto max-w-3xl">
           <div className="flex gap-2">
             <Textarea
-              value={localInput}
-              onChange={(e) => setLocalInput(e.target.value)}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault()
@@ -111,7 +106,7 @@ export function ChatContainer() {
                   <Square className="h-4 w-4" />
                 </Button>
               ) : (
-                <Button onClick={handleSend} disabled={!localInput.trim()} size="icon" aria-label="Gửi">
+                <Button onClick={handleSend} disabled={!input.trim()} size="icon" aria-label="Gửi">
                   <Send className="h-4 w-4" />
                 </Button>
               )}

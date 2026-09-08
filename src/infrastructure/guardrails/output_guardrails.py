@@ -10,7 +10,6 @@ lives in pipeline.py and its companion guardrail modules.
 """
 
 import re
-import math
 import logging
 from typing import Any
 from collections.abc import Sequence

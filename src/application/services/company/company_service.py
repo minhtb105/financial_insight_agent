@@ -1,7 +1,6 @@
 from collections.abc import Callable
 from typing import Any
 
-import logging
 from shared.constants import COMPANY_TTL_HOURS
 from shared.ports.cache_port import CachePort
 from shared.ports.company_port import CompanyPort
@@ -64,8 +63,5 @@ _get_company_field_with_ticker = _get_company_field
 
 
 def handle_company_query(tickers: list[str], field: str = "shareholders") -> dict[str, Any]:
-    from shared.service_registry import get_service
-    svc = get_service("company")
-    if svc is None:
-        raise RuntimeError("Service 'company' not initialized — call init_deps()")
-    return svc.handle_query(tickers=tickers, field=field)
+    from shared.service_helpers import call_service
+    return call_service("company", tickers=tickers, field=field)

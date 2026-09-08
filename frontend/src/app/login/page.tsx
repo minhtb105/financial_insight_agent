@@ -2,10 +2,16 @@
 import { useState } from "react"
 import { signIn } from "next-auth/react"
 import { useRouter } from "next/navigation"
+import { z } from "zod"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+
+const loginSchema = z.object({
+  email: z.string().email("Email không hợp lệ"),
+  password: z.string().min(3, "Mật khẩu tối thiểu 3 ký tự"),
+})
 
 export default function LoginPage() {
   const router = useRouter()
@@ -16,6 +22,11 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    const parsed = loginSchema.safeParse({ email, password })
+    if (!parsed.success) {
+      setError(parsed.error.issues[0]?.message ?? "Dữ liệu không hợp lệ")
+      return
+    }
     setLoading(true)
     setError("")
     const res = await signIn("credentials", { email, password, redirect: false })

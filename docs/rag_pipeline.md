@@ -43,7 +43,7 @@ Backend `src/infrastructure/rag/scheduler.py` dùng APScheduler `CronTrigger(day
 
 ## Agent tích hợp
 
-- Tool `search_knowledge` trong `src/application/agents/tool_registry.py:search_knowledge` → `src/infrastructure/rag/retriever.py`
+- Tool `search_knowledge` trong `src/mcp_server/tools/knowledge.py:search_knowledge` → `src/infrastructure/rag/retriever.py` + `src/infrastructure/adapters/knowledge_adapter.py` (trước đây `src/application/agents/tool_registry.py` đã xóa ở 76556d2)
 - Prompt `agent_system` v1.1 (`src/application/prompts/templates/agent_system.yaml`) bổ sung quy tắc citation `[Nguồn: ...]` và safety TT135
 - Safety `src/infrastructure/rag/safety.py` lọc khuyến nghị mua/bán cụ thể và thêm disclaimer
 

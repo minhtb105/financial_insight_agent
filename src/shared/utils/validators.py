@@ -1,16 +1,10 @@
-"""Shared validators — moved from domain for shared layer purity."""
+"""Ticker validators — re-export from domain (single source of truth).
 
-import re
+Shared layer re-exports domain validators so application code can import from
+``shared.utils.validators`` without creating a second implementation.
+Domain remains canonical and does not import shared (hexagon rule).
+"""
 
-TICKER_PATTERN = re.compile(r"^[A-Z0-9]{2,8}$")
+from domain.entities.time_range import TICKER_PATTERN, validate_ticker_list
 
-
-def validate_ticker_list(tickers: list[str]) -> list[str]:
-    if not tickers:
-        raise ValueError("At least one ticker is required")
-    result = []
-    for ticker in tickers:
-        if not isinstance(ticker, str) or not TICKER_PATTERN.match(ticker.upper()):
-            raise ValueError(f"Invalid ticker: {ticker}")
-        result.append(ticker.upper())
-    return result
+__all__ = ["TICKER_PATTERN", "validate_ticker_list"]

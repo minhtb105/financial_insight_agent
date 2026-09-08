@@ -2,11 +2,11 @@ import { getServerSession } from "next-auth"
 import { redirect } from "next/navigation"
 import { authOptions } from "@/auth"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { getBackendUrl } from "@/lib/backend"
 
 async function fetchTrace(id: string) {
-  const base = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
   try {
-    const res = await fetch(`${base.replace(/\/$/, "")}/api/v1/traces/${encodeURIComponent(id)}`, { cache: "no-store" })
+    const res = await fetch(`${getBackendUrl()}/api/v1/traces/${encodeURIComponent(id)}`, { cache: "no-store" })
     const data = await res.json()
     return { ok: res.ok, data }
   } catch (e) { return { ok: false, data: { detail: String(e) } } }

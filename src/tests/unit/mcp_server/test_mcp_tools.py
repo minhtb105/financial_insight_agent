@@ -2,7 +2,6 @@
 
 import json
 
-import pytest
 
 from mcp_server.instance import mcp
 import mcp_server.tools  # noqa: F401 — ensure registration
@@ -64,7 +63,6 @@ def test_search_knowledge_has_citation_guidance():
 
 
 def test_mcp_tool_invocation_via_helpers():
-    from unittest.mock import patch
 
     from mcp_server.tools.helpers import _wrap, _categorize_error, TOOL_ERR_PREFIX
 

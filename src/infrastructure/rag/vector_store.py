@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import os
-import time
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any
 
 from qdrant_client import QdrantClient
@@ -24,10 +22,9 @@ def _client() -> QdrantClient:
 
 
 def _week_label(dt: datetime | None = None) -> str:
-    d = dt or datetime.now(timezone.utc)
-    # ISO week
-    year, week, _ = d.isocalendar()
-    return f"{year}w{week:02d}"
+    from infrastructure.rag.utils import week_label
+
+    return week_label(dt)
 
 
 def collection_name_for_week(week: str | None = None) -> str:

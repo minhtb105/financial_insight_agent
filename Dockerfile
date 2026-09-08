@@ -9,10 +9,10 @@ RUN pip install --upgrade pip && pip install -e .
 
 FROM base AS production
 ENV PYTHONPATH=/app/src APP_PORT=8000
-EXPOSE 8000
+EXPOSE 8000 8001
 CMD ["uvicorn", "interfaces.api.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
 
 FROM base AS development
 ENV PYTHONPATH=/app/src LOG_LEVEL=DEBUG
-EXPOSE 8000
+EXPOSE 8000 8001
 CMD ["uvicorn", "interfaces.api.app:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

@@ -1,6 +1,5 @@
 """Unit tests for BaseService — strict DI."""
 
-from unittest.mock import MagicMock
 
 from shared.base_service import BaseService
 from shared.ports.cache_port import CachePort
@@ -79,7 +78,6 @@ def test_is_nan_none():
     assert BaseService._is_nan(None) is True
 
 def test_is_nan_nan():
-    import math
     assert BaseService._is_nan(float("nan")) is True
 
 def test_is_nan_valid_number():

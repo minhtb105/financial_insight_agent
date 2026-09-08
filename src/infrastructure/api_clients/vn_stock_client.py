@@ -2,7 +2,11 @@ import logging
 import pandas as pd
 from vnstock import Company, Quote
 
+from infrastructure.resilience.circuit_breaker import create_circuit_breaker
+
 logger = logging.getLogger(__name__)
+
+_vnstock_breaker = create_circuit_breaker("vnstock", failure_threshold=5, recovery_timeout=60)
 
 _EXPECTED_COLUMNS = {"time", "open", "high", "low", "close", "volume"}
 
@@ -56,17 +60,24 @@ class VNStockClient:
         start_str = start.strftime("%Y-%m-%d")
         end_str = end.strftime("%Y-%m-%d")
 
-        # --- 2. Fetch raw data ---
+        # --- 2. Fetch raw data (circuit-breaker protected) ---
+        if not _vnstock_breaker.acquire_permit():
+            logger.warning("Circuit breaker OPEN for vnstock — returning empty for %s", self.ticker)
+            return pd.DataFrame()
         try:
             df = self.quote.history(start=start_str, end=end_str, interval=interval)
+            _vnstock_breaker.record_success()
         except (ValueError, TypeError) as e:
             logger.error("Invalid parameters for %s: %s", self.ticker, e)
+            # validation errors not counted as breaker failures
             return pd.DataFrame()
         except ConnectionError as e:
             logger.error("Network error fetching %s: %s", self.ticker, e)
+            _vnstock_breaker.record_failure()
             return pd.DataFrame()
         except Exception:
             logger.exception("Unexpected error fetching %s", self.ticker)
+            _vnstock_breaker.record_failure()
             return pd.DataFrame()
 
         if df is None or df.empty:

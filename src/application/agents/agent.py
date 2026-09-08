@@ -74,7 +74,6 @@ class StockAgent:
         except Exception as e:
             logger.warning("MCP loader failed, fallback to direct mcp_server import: %s", e)
             try:
-                from mcp_server.instance import mcp as _mcp
                 import mcp_server.tools  # noqa: F401
 
                 # Convert FastMCP tools to LangChain via fallback loader

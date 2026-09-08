@@ -1,4 +1,3 @@
-import logging
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -223,8 +222,5 @@ def handle_news_sentiment_query(
     weeks: int | None = None,
     months: int | None = None,
 ) -> dict[str, Any]:
-    from shared.service_registry import get_service
-    svc = get_service("news")
-    if svc is None:
-        raise RuntimeError("Service 'news' not initialized — call init_deps()")
-    return svc.handle_query(tickers=tickers, field=field, compare_with=compare_with, days=days, weeks=weeks, months=months)
+    from shared.service_helpers import call_service
+    return call_service("news", tickers=tickers, field=field, compare_with=compare_with, days=days, weeks=weeks, months=months)

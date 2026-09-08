@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +14,7 @@ from .embedder import Embedder
 from .ingestion.connectors import ingest_source
 from .processing.chunker import chunk_text, dedupe_chunks
 from .registry import add_source_manifest, create_run, finish_run
-from .vector_store import ALIAS, cleanup_old_backups, collection_name_for_week, ensure_collection, swap_alias, upsert_points
+from .vector_store import cleanup_old_backups, collection_name_for_week, ensure_collection, swap_alias, upsert_points
 
 logger = get_logger("rag.pipeline")
 
@@ -31,9 +29,9 @@ def _load_sources() -> tuple[list[dict[str, Any]], dict[str, Any]]:
 
 
 def _week_label() -> str:
-    d = datetime.now(timezone.utc)
-    y, w, _ = d.isocalendar()
-    return f"{y}w{w:02d}"
+    from infrastructure.rag.utils import week_label
+
+    return week_label()
 
 
 def run_full_refresh(force: bool = False, week: str | None = None, db_path: Path | str | None = None) -> dict[str, Any]:
@@ -52,8 +50,6 @@ def run_full_refresh(force: bool = False, week: str | None = None, db_path: Path
     base_collection = collection_name_for_week(week)
     collection = base_collection
     # if exists and not force, add suffix
-    from qdrant_client import QdrantClient
-    import os
 
     # create run entry
     run_id = create_run(week=week, collection=collection, sources_manifest=[{"id": s["id"], "url": s["url"]} for s in sources], db_path=db_path)

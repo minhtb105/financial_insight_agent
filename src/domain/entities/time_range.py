@@ -1,6 +1,5 @@
 import calendar
 import re
-from typing import Any
 from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel, Field, field_validator, model_validator
 

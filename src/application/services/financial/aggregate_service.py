@@ -1,9 +1,9 @@
-import logging
 from typing import Any
-from shared.utils.calculations import calculate_std_dev
 from shared.base_service import BaseService
-from shared.ports.market_data_port import MarketDataPort
 from shared.ports.cache_port import CachePort
+from shared.ports.market_data_port import MarketDataPort
+from shared.utils.calculations import calculate_std_dev
+from shared.utils.stats_helpers import aggregate_values, extract_field_values
 
 
 class AggregateService(BaseService):
@@ -83,20 +83,13 @@ def perform_aggregation(
     Returns:
         Dict chứa kết quả tổng hợp và thống kê tổng quan.
     """
-    aggregation = {}
-
-    all_values = []
-    ticker_data = {}
+    all_values: list[float] = []
+    ticker_data: dict[str, Any] = {}
 
     for ticker, data in all_data.items():
         if "error" in data:
             continue
-
-        values = [
-            item[field]
-            for item in data["data"]
-            if field in item and item[field] is not None and item[field] == item[field]
-        ]
+        values = extract_field_values(data.get("data", []), field)
         if values:
             ticker_data[ticker] = {
                 "values": values,
@@ -110,37 +103,14 @@ def perform_aggregation(
     if not all_values:
         return {"error": "No valid data for aggregation"}
 
+    result_value = aggregate_values(all_values, aggregate_func)
+
+    # overall stats via helpers
     sorted_values = sorted(all_values)
     n = len(sorted_values)
-
-    if aggregate_func == "mean":
-        result_value = sum(all_values) / n
-    elif aggregate_func == "sum":
-        result_value = sum(all_values)
-    elif aggregate_func == "median":
-        result_value = (
-            sorted_values[n // 2]
-            if n % 2
-            else (sorted_values[n // 2 - 1] + sorted_values[n // 2]) / 2
-        )
-    elif aggregate_func == "std":
-        result_value = calculate_std_dev(all_values)
-    elif aggregate_func == "min":
-        result_value = min(all_values)
-    elif aggregate_func == "max":
-        result_value = max(all_values)
-    else:
-        result_value = sum(all_values) / n
-
     overall_mean = sum(all_values) / n
-    overall_min = min(all_values)
-    overall_max = max(all_values)
-    overall_sum = sum(all_values)
-    overall_median = (
-        sorted_values[n // 2] if n % 2 else (sorted_values[n // 2 - 1] + sorted_values[n // 2]) / 2
-    )
+    overall_median = sorted_values[n // 2] if n % 2 else (sorted_values[n // 2 - 1] + sorted_values[n // 2]) / 2
     overall_std = calculate_std_dev(all_values)
-
     cv = (overall_std / overall_mean) * 100 if overall_mean and overall_mean == overall_mean else 0
 
     aggregation = {
@@ -153,9 +123,9 @@ def perform_aggregation(
             "mean": overall_mean,
             "median": overall_median,
             "std_dev": overall_std,
-            "min": overall_min,
-            "max": overall_max,
-            "sum": overall_sum,
+            "min": min(all_values),
+            "max": max(all_values),
+            "sum": sum(all_values),
             "coefficient_of_variation": cv,
             "total_data_points": len(all_values),
         },
@@ -168,15 +138,15 @@ def perform_aggregation(
 
 def handle_aggregate_query(tickers: list[str],
     field: str = "close",
-    aggregate_fn: str = "mean",
+    aggregate: str = "mean",
+    aggregate_fn: str | None = None,
     days: int | None = None,
     weeks: int | None = None,
     months: int | None = None,
     start_date: str | None = None,
     end_date: str | None = None,) -> dict[str, Any]:
-    from shared.service_registry import get_service
-    svc = get_service("aggregate")
-    if svc is None:
-        raise RuntimeError("Service 'aggregate' not initialized — call init_deps()")
-    return svc.handle_query(tickers=tickers, field=field, aggregate_fn=aggregate_fn, days=days, weeks=weeks, months=months, start_date=start_date, end_date=end_date)
+    from shared.service_helpers import call_service
+    # Support both param names for backward compat (tool used aggregate_fn, service uses aggregate)
+    agg = aggregate_fn if aggregate_fn is not None else aggregate
+    return call_service("aggregate", tickers=tickers, field=field, aggregate=agg, days=days, weeks=weeks, months=months, start_date=start_date, end_date=end_date)
 

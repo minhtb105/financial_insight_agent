@@ -4,11 +4,11 @@ import { authOptions } from "@/auth"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
+import { getBackendUrl } from "@/lib/backend"
 
 async function fetchTraces() {
-  const base = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
   try {
-    const res = await fetch(`${base.replace(/\/$/, "")}/api/v1/traces?limit=20`, { cache: "no-store" })
+    const res = await fetch(`${getBackendUrl()}/api/v1/traces?limit=20`, { cache: "no-store" })
     if (!res.ok) return { enabled: false, traces: [] }
     return await res.json()
   } catch { return { enabled: false, traces: [] } }

@@ -1,4 +1,3 @@
-import logging
 from typing import Any
 from statistics import mean, stdev
 from datetime import datetime, timedelta, timezone
@@ -116,9 +115,6 @@ class ForecastService(BaseService):
 
 def handle_forecast_query(tickers: list[str],
     timeframe: str = "1w",) -> dict[str, Any]:
-    from shared.service_registry import get_service
-    svc = get_service("forecast")
-    if svc is None:
-        raise RuntimeError("Service 'forecast' not initialized — call init_deps()")
-    return svc.handle_query(tickers=tickers, timeframe=timeframe)
+    from shared.service_helpers import call_service
+    return call_service("forecast", tickers=tickers, timeframe=timeframe)
 

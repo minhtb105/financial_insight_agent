@@ -1,5 +1,4 @@
 import json
-import logging
 from typing import Any
 import pandas as pd
 from shared.constants import INDICATOR_TTL_HOURS
@@ -246,12 +245,9 @@ def handle_indicator_query(
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> dict[str, Any]:
-    from shared.service_registry import get_service
-    svc = get_service("indicator")
-    if svc is None:
-        raise RuntimeError("Service 'indicator' not initialized — call init_deps()")
-    # Map indicator -> field + indicator_params
-    indicator_params = {}
+    from shared.service_helpers import call_service
+    # Map indicator -> field + indicator_params (kept for backward compat with MCP tools)
+    indicator_params: dict[str, Any] | None = {}
     if period is not None:
         indicator_params["period"] = period
     if fast_period is not None:
@@ -260,5 +256,15 @@ def handle_indicator_query(
         indicator_params["slow_period"] = slow_period
     if not indicator_params:
         indicator_params = None
-    return svc.handle_query(tickers=tickers, field=indicator, indicator_params=indicator_params, days=days, weeks=weeks, months=months, start_date=start_date, end_date=end_date)
+    return call_service(
+        "indicator",
+        tickers=tickers,
+        field=indicator,
+        indicator_params=indicator_params,
+        days=days,
+        weeks=weeks,
+        months=months,
+        start_date=start_date,
+        end_date=end_date,
+    )
 

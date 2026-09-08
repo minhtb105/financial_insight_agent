@@ -1,9 +1,9 @@
-import logging
-from typing import Any
 import math
+from typing import Any
 from shared.base_service import BaseService
-from shared.ports.market_data_port import MarketDataPort
 from shared.ports.cache_port import CachePort
+from shared.ports.market_data_port import MarketDataPort
+from shared.utils.stats_helpers import extract_field_values
 
 
 class CompareService(BaseService):
@@ -93,12 +93,7 @@ def perform_comparison(
         if "error" in data:
             main_stats[ticker] = {"error": data["error"]}
             continue
-
-        values = [
-            item[field]
-            for item in data["data"]
-            if field in item and item.get(field) is not None and item[field] == item[field]
-        ]
+        values = extract_field_values(data.get("data", []), field)
         if values:
             main_stats[ticker] = {
                 "mean": sum(values) / len(values),
@@ -113,12 +108,7 @@ def perform_comparison(
         if "error" in data:
             compare_stats[ticker] = {"error": data["error"]}
             continue
-
-        values = [
-            item[field]
-            for item in data["data"]
-            if field in item and item.get(field) is not None and item[field] == item[field]
-        ]
+        values = extract_field_values(data.get("data", []), field)
         if values:
             compare_stats[ticker] = {
                 "mean": sum(values) / len(values),
@@ -222,9 +212,6 @@ def handle_compare_query(tickers: list[str],
     months: int | None = None,
     start_date: str | None = None,
     end_date: str | None = None,) -> dict[str, Any]:
-    from shared.service_registry import get_service
-    svc = get_service("compare")
-    if svc is None:
-        raise RuntimeError("Service 'compare' not initialized — call init_deps()")
-    return svc.handle_query(tickers=tickers, compare_with=compare_with, field=field, days=days, weeks=weeks, months=months, start_date=start_date, end_date=end_date)
+    from shared.service_helpers import call_service
+    return call_service("compare", tickers=tickers, compare_with=compare_with, field=field, days=days, weeks=weeks, months=months, start_date=start_date, end_date=end_date)
 

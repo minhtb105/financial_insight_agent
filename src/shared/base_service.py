@@ -59,6 +59,7 @@ class BaseService:
         days: int | None = None,
         weeks: int | None = None,
         months: int | None = None,
+        years: int | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
     ) -> tuple[str, str]:
@@ -70,6 +71,8 @@ class BaseService:
             time_query["weeks"] = weeks
         if months is not None:
             time_query["months"] = months
+        if years is not None:
+            time_query["years"] = years
         if start_date is not None:
             time_query["start"] = start_date
         if end_date is not None:

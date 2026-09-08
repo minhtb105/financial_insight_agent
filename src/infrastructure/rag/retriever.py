@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from infrastructure.observability import get_logger
-from .embedder import Embedder, embed_query
+from .embedder import embed_query
 from .vector_store import ALIAS, search as vs_search
 
 logger = get_logger("rag.retriever")

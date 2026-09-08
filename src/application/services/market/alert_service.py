@@ -1,4 +1,3 @@
-import logging
 from typing import Any
 from datetime import datetime, timedelta, timezone
 
@@ -90,9 +89,6 @@ def handle_alert_query(tickers: list[str],
     threshold: float,
     condition: str = "above",
     timeframe: str = "1d",) -> dict[str, Any]:
-    from shared.service_registry import get_service
-    svc = get_service("alert")
-    if svc is None:
-        raise RuntimeError("Service 'alert' not initialized — call init_deps()")
-    return svc.handle_query(tickers=tickers, threshold=threshold, condition=condition, timeframe=timeframe)
+    from shared.service_helpers import call_service
+    return call_service("alert", tickers=tickers, threshold=threshold, condition=condition, timeframe=timeframe)
 

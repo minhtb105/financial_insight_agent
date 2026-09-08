@@ -1,7 +1,5 @@
-import logging
 from typing import Any
 
-from shared.utils.time_processor import TimeProcessor
 from domain.schemas.price import PriceRecord, PriceResult
 from shared.base_service import BaseService
 from shared.ports.market_data_port import MarketDataPort
@@ -20,6 +18,7 @@ class PriceService(BaseService):
         days: int | None = None,
         weeks: int | None = None,
         months: int | None = None,
+        years: int | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
     ) -> dict[str, Any]:
@@ -31,6 +30,7 @@ class PriceService(BaseService):
             days: Số ngày gần nhất.
             weeks: Số tuần gần nhất.
             months: Số tháng gần nhất.
+            years: Số năm gần nhất.
             start_date: Ngày bắt đầu (YYYY-MM-DD).
             end_date: Ngày kết thúc (YYYY-MM-DD).
 
@@ -41,41 +41,30 @@ class PriceService(BaseService):
         if err:
             return err
 
-        parsed: dict[str, Any] = {
-            "tickers": tickers,
-            "requested_field": field,
-        }
-        if days is not None:
-            parsed["days"] = days
-        if weeks is not None:
-            parsed["weeks"] = weeks
-        if months is not None:
-            parsed["months"] = months
-        if start_date is not None:
-            parsed["start"] = start_date
-        if end_date is not None:
-            parsed["end"] = end_date
+        try:
+            start_date_r, end_date_r = self._build_time_params(
+                days=days, weeks=weeks, months=months, years=years, start_date=start_date, end_date=end_date
+            )
+        except ValueError as e:
+            return {"error": str(e)}
 
-        results = self.for_each_ticker(tickers, lambda t: self._fetch_single(t, field, parsed))
+        results = self.for_each_ticker(tickers, lambda t: self._fetch_price_for_ticker(t, field, start_date_r, end_date_r))
 
         return results if results else {"error": "No valid data found"}
 
-    def _fetch_single(self, ticker: str, field: str, parsed: dict[str, Any]) -> dict[str, Any]:
+    def _fetch_price_for_ticker(self, ticker: str, field: str, start_date: str, end_date: str) -> dict[str, Any]:
         """Lấy dữ liệu giá cho một mã chứng khoán.
 
         Args:
             ticker: Mã chứng khoán.
             field: Trường giá cần lấy.
-            parsed: Dict chứa tham số thời gian đã xử lý.
+            start_date: Ngày bắt đầu đã resolve (YYYY-MM-DD).
+            end_date: Ngày kết thúc đã resolve (YYYY-MM-DD).
 
         Returns:
             Dict chứa dữ liệu giá hoặc lỗi.
         """
         try:
-            time_processor = TimeProcessor()
-            time_params = time_processor.process_time_params(parsed)
-            start_date = time_params["start_date"]
-            end_date = time_params["end_date"]
 
             raw = self._market_data.get_price_data(ticker, start_date, end_date)
             if "error" in raw:
@@ -107,16 +96,36 @@ class PriceService(BaseService):
             self.logger.error(f"Failed to fetch price for {ticker}: {e}")
             return {"error": str(e)}
 
+    # Backward compat alias — old code called _fetch_single(ticker, field, parsed)
+    def _fetch_single(self, ticker: str, field: str | dict[str, Any], parsed: dict[str, Any] | None = None) -> dict[str, Any]:
+        if isinstance(field, dict) and parsed is None:
+            # legacy: _fetch_single(ticker, parsed_dict) — not used anymore
+            return {"error": "deprecated _fetch_single signature"}
+        if parsed is not None and isinstance(parsed, dict):
+            # legacy: _fetch_single(ticker, field, parsed)
+            try:
+                start_date, end_date = self._build_time_params(
+                    days=parsed.get("days"),
+                    weeks=parsed.get("weeks"),
+                    months=parsed.get("months"),
+                    years=parsed.get("years"),
+                    start_date=parsed.get("start"),
+                    end_date=parsed.get("end"),
+                )
+            except ValueError as e:
+                return {"error": str(e)}
+            return self._fetch_price_for_ticker(ticker, field, start_date, end_date)  # type: ignore[arg-type]
+        # new signature via BaseService compatibility
+        return super()._fetch_single(ticker, field, parsed or "")  # type: ignore[arg-type]
+
 def handle_price_query(tickers: list[str],
     field: str = "close",
     days: int | None = None,
     weeks: int | None = None,
     months: int | None = None,
+    years: int | None = None,
     start_date: str | None = None,
     end_date: str | None = None,) -> dict[str, Any]:
-    from shared.service_registry import get_service
-    svc = get_service("price")
-    if svc is None:
-        raise RuntimeError("Service 'price' not initialized — call init_deps()")
-    return svc.handle_query(tickers=tickers, field=field, days=days, weeks=weeks, months=months, start_date=start_date, end_date=end_date)
+    from shared.service_helpers import call_service
+    return call_service("price", tickers=tickers, field=field, days=days, weeks=weeks, months=months, years=years, start_date=start_date, end_date=end_date)
 

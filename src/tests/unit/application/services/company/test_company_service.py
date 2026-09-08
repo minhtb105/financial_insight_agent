@@ -1,6 +1,5 @@
 """Unit tests for company_service — CompanyService and helpers (strict DI)."""
 
-from unittest.mock import MagicMock
 import pandas as pd
 from shared.service_registry import set_service, clear
 from shared.ports.cache_port import CachePort

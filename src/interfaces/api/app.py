@@ -7,8 +7,9 @@ from contextlib import asynccontextmanager, suppress
 import time
 
 from fastapi import FastAPI, APIRouter, Request, HTTPException
-from interfaces.api.routes.traces import router as traces_router
+from interfaces.api.routes.market import router as market_router
 from interfaces.api.routes.rag import router as rag_router
+from interfaces.api.routes.traces import router as traces_router
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
@@ -484,4 +485,5 @@ async def ping():
 
 api_router.include_router(traces_router)
 api_router.include_router(rag_router)
+api_router.include_router(market_router)
 app.include_router(api_router)

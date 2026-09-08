@@ -1,6 +1,5 @@
 """Tests for shared.price_data shim — delegates to MarketDataPort via registry."""
 
-from unittest.mock import MagicMock
 
 from shared.service_registry import set_service, clear
 from shared.ports.market_data_port import MarketDataPort

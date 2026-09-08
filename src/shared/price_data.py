@@ -1,12 +1,15 @@
-"""Shim for backward compat — delegates to MarketDataPort via service registry.
+"""Deprecated shim — will be removed in v2. Use MarketDataPort via BaseService instead.
 
 Strict hexagon: shared layer should not import infrastructure, but this shim exists only for legacy tests that patch shared.price_data.get_price_data.
 Production code now uses MarketDataPort directly via BaseService.
 """
 
+import warnings
 from typing import Any
 
 from shared.service_registry import get_service
+
+warnings.warn("shared.price_data.get_price_data is deprecated — use MarketDataPort", DeprecationWarning, stacklevel=2)
 
 
 def get_price_data(

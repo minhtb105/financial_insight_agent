@@ -1,12 +1,8 @@
-from copy import deepcopy
-import logging
 from typing import Any
 from shared.constants import RATIO_TTL_HOURS
-from shared.utils.time_processor import TimeProcessor
-from shared.utils.cache_keys import make_cache_key
 from shared.base_service import BaseService
-from shared.ports.financial_port import FinancialPort
 from shared.ports.cache_port import CachePort
+from shared.ports.financial_port import FinancialPort
 
 
 def _ensure_float(v, default: float = 0.0) -> float:
@@ -285,13 +281,8 @@ def get_financial_ratios(
 
         row = financial_data.iloc[0].to_dict() if not financial_data.empty else {}
 
-        time_processor = TimeProcessor()
-        time_params = (
-            time_processor.process_time_params(parsed)
-            if parsed
-            else time_processor.get_default_time_range()
-        )
-        time_range = time_params.get("time_description", "Latest")
+        # time_range is metadata only; financial statements are point-in-time
+        time_range = "Latest"
 
         for rt_name, cfg in _RATIO_ENTRIES.items():
             if ratio_type is None or ratio_type == rt_name:
@@ -313,9 +304,6 @@ def get_financial_ratios(
 
 def handle_financial_ratio_query(tickers: list[str],
     field: str = "pe",) -> dict[str, Any]:
-    from shared.service_registry import get_service
-    svc = get_service("financial_ratio")
-    if svc is None:
-        raise RuntimeError("Service 'financial_ratio' not initialized — call init_deps()")
-    return svc.handle_query(tickers=tickers, field=field)
+    from shared.service_helpers import call_service
+    return call_service("financial_ratio", tickers=tickers, field=field)
 

@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 def parse_int_env(name: str, default: int) -> int:
+    """Deprecated — use shared.config._get_int instead for consistency."""
     raw = os.getenv(name, str(default))
     try:
         return int(raw.strip())

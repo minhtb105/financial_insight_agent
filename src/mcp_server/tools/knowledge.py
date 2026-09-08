@@ -7,10 +7,14 @@ from typing import Annotated
 from pydantic import Field
 
 from mcp_server.instance import mcp
-from mcp_server.tools.helpers import call_service, _safe_json
-from infrastructure.adapters.knowledge_adapter import QdrantKnowledgeAdapter
+from mcp_server.tools.helpers import call_service
 
-_adapter = QdrantKnowledgeAdapter()
+
+def _search_knowledge_impl(query: str, top_k: int = 5) -> dict:
+    from infrastructure.adapters.knowledge_adapter import QdrantKnowledgeAdapter
+
+    adapter = QdrantKnowledgeAdapter()
+    return adapter.search(query, top_k=top_k)  # type: ignore[return-value]
 
 
 @mcp.tool(
@@ -21,13 +25,4 @@ def search_knowledge(
     query: Annotated[str, Field(description="Vietnamese query about law/concept")],
     top_k: Annotated[int, Field(description="Top K hits", ge=1, le=10)] = 5,
 ) -> str:
-    try:
-        result = _adapter.search(query, top_k=top_k)
-        # _adapter returns dict with hits/context — wrap via _safe_json
-        import json
-
-        return json.dumps(result, ensure_ascii=False, indent=2)
-    except Exception as e:
-        from mcp_server.tools.helpers import _categorize_error
-
-        return _categorize_error(e)
+    return call_service("search_knowledge", _search_knowledge_impl, query=query, top_k=top_k)
