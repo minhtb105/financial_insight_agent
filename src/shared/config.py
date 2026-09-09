@@ -93,20 +93,32 @@ ENABLE_RAG_SCHEDULER: bool = _get_bool("ENABLE_RAG_SCHEDULER", True)
 ADMIN_API_KEY: str | None = os.getenv("ADMIN_API_KEY")
 
 # Database (Postgres primary, SQLite fallback for local dev without Docker)
+# Default to sqlite for local dev; Docker compose overrides via env to postgres.
 DATABASE_URL: str = os.getenv(
     "DATABASE_URL",
-    "postgresql+asyncpg://finsight:finsight@localhost:5432/finsight",
+    "sqlite+aiosqlite:///./data/app.db",
 )
-# Sync URL for alembic (psycopg2)
-DATABASE_SYNC_URL: str = os.getenv(
-    "DATABASE_SYNC_URL",
-    DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://").replace("sqlite+aiosqlite://", "sqlite://"),
-)
+# Sync URL for alembic — use urllib.parse to preserve query params
+def _to_sync_url(url: str) -> str:
+    if url.startswith("postgresql+asyncpg://"):
+        return url.replace("postgresql+asyncpg://", "postgresql://", 1)
+    if url.startswith("sqlite+aiosqlite://"):
+        return url.replace("sqlite+aiosqlite://", "sqlite://", 1)
+    return url
+
+DATABASE_SYNC_URL: str = os.getenv("DATABASE_SYNC_URL", _to_sync_url(DATABASE_URL))
 
 # Auth / JWT
-JWT_SECRET: str = os.getenv("JWT_SECRET") or os.getenv("NEXTAUTH_SECRET") or "finsight-dev-secret-change-me-in-prod"
+_raw_jwt_secret = os.getenv("JWT_SECRET") or os.getenv("NEXTAUTH_SECRET")
+if not _raw_jwt_secret:
+    if os.getenv("NODE_ENV") == "production" or os.getenv("ENV") == "production":
+        raise RuntimeError("JWT_SECRET/NEXTAUTH_SECRET must be set in production")
+    _raw_jwt_secret = "finsight-dev-secret-change-me-in-prod"
+JWT_SECRET: str = _raw_jwt_secret
 JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
-JWT_EXPIRE_MINUTES: int = _get_int("JWT_EXPIRE_MINUTES", 60)
+_raw_expire = _get_int("JWT_EXPIRE_MINUTES", 60)
+# Clamp to [1, 1440] (1 min .. 24h) to avoid immortal/expired tokens
+JWT_EXPIRE_MINUTES: int = max(1, min(_raw_expire, 1440))
 # Admin seed (created on startup if not exists)
 ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL", "admin@finsight.vn")
 ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "admin123")

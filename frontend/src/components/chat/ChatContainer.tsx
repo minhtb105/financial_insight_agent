@@ -56,8 +56,13 @@ export function ChatContainer() {
     clear()
     localStorage.removeItem(storageKey)
     try {
-      await fetch("/api/memory", { method: "DELETE" })
-    } catch {}
+      const res = await fetch("/api/memory", { method: "DELETE" })
+      if (!res.ok) {
+        console.warn("Failed to clear server memory:", res.status, await res.text().catch(() => ""))
+      }
+    } catch (err) {
+      console.warn("Failed to clear server memory:", err)
+    }
   }
 
   return (

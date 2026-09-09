@@ -152,14 +152,18 @@ async def lifespan(_app: FastAPI):
     except Exception as e:
         _request_logger.error("Dependencies init failed", extra={"error": str(e)})
 
-    # DB init + seed admin (non-blocking)
+    # DB init + seed admin (non-blocking) — create_all is checkfirst=True, alembic race is safe; ignore "already exists"
     try:
         from infrastructure.db.base import init_db
 
         await init_db()
         _request_logger.info("DB tables ensured")
     except Exception as e:
-        _request_logger.warning("DB init failed: %s", e)
+        # Ignore "already exists" from concurrent alembic upgrade head vs create_all
+        if "already exists" in str(e).lower():
+            _request_logger.info("DB tables already exist (concurrent init)")
+        else:
+            _request_logger.warning("DB init failed: %s", e)
     try:
         from infrastructure.db.seed import seed_admin, seed_demo_user
 
@@ -344,11 +348,12 @@ async def trace_middleware(request: Request, call_next):
 # ---------------------------------------------------------------------------
 
 
-async def check_guardrails(query: str, request: Request):
+async def check_guardrails(query: str, request: Request, user_id: str | None = None):
     if _guardrail_pipeline is None:
         return
-    client_ip = _get_client_ip(request)
-    result = _guardrail_pipeline.check(query, client_ip)
+    # Per-user rate limit when authenticated, fallback to IP
+    rate_key = f"user:{user_id}" if user_id else _get_client_ip(request)
+    result = _guardrail_pipeline.check(query, rate_key)
     if not result.passed:
         _request_logger.warning(
             "Guardrail blocked query",
@@ -395,7 +400,7 @@ async def ask_stock_agent_stream(
 
         return StreamingResponse(no_agent_stream(), media_type="text/event-stream")
 
-    await check_guardrails(body.query, request)
+    await check_guardrails(body.query, request, user_id=current_user.id)
 
     if not body.query.strip():
         raise HTTPException(status_code=422, detail="Query must not be empty or only whitespace")

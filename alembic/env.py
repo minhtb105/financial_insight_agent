@@ -14,8 +14,13 @@ config = context.config
 # Override sqlalchemy.url from env if present
 db_url = os.getenv("DATABASE_SYNC_URL") or os.getenv("DATABASE_URL", "")
 if db_url:
-    # Convert async URL to sync for alembic
-    sync_url = db_url.replace("postgresql+asyncpg://", "postgresql://").replace("sqlite+aiosqlite://", "sqlite://")
+    # Convert async URL to sync for alembic, preserving query params (single replace)
+    if db_url.startswith("postgresql+asyncpg://"):
+        sync_url = db_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+    elif db_url.startswith("sqlite+aiosqlite://"):
+        sync_url = db_url.replace("sqlite+aiosqlite://", "sqlite://", 1)
+    else:
+        sync_url = db_url
     config.set_main_option("sqlalchemy.url", sync_url)
 
 if config.config_file_name is not None:

@@ -2,6 +2,10 @@ import type { NextAuthOptions } from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
 import { getBackendUrl } from "@/lib/backend"
 
+if (process.env.NODE_ENV === "production" && !process.env.NEXTAUTH_SECRET) {
+  throw new Error("NEXTAUTH_SECRET must be set in production")
+}
+
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
@@ -13,13 +17,18 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null
         try {
+          type BackendLoginResponse = {
+            access_token: string
+            user: { id: string; email: string; name: string; role: string }
+          }
           const res = await fetch(`${getBackendUrl()}/api/v1/auth/login`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ email: credentials.email, password: credentials.password }),
+            signal: AbortSignal.timeout(5000),
           })
           if (!res.ok) return null
-          const data = await res.json()
+          const data = (await res.json()) as BackendLoginResponse
           const user = data.user
           if (!user) return null
           return {

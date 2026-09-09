@@ -11,8 +11,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from infrastructure.db.base import Base
 
 
-def _uuid_default():
-    return uuid.uuid4()
+def _uuid_default() -> str:
+    return str(uuid.uuid4())
 
 
 class User(Base):
@@ -21,7 +21,7 @@ class User(Base):
     id: Mapped[str] = mapped_column(
         String(36),
         primary_key=True,
-        default=lambda: str(uuid.uuid4()),
+        default=_uuid_default,
     )
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)

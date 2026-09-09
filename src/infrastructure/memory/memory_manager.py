@@ -40,6 +40,13 @@ class MemoryManager:
         self._cleanup_task = None
         logger.info("Initialized MemoryManager with short-term memory")
 
+    def _validated_user_id(self, user_id: str | None) -> str:
+        # Strict per-user isolation: None/empty -> anonymous (not global). Caller should pass real user_id.
+        if user_id is None or user_id == "":
+            logger.debug("Memory call without user_id -> using anonymous isolation")
+            return "anonymous"
+        return user_id
+
     def add_interaction(
         self,
         user_query: str,
@@ -57,7 +64,7 @@ class MemoryManager:
                 agent_response=agent_response,
                 context=context,
                 confidence=confidence,
-                user_id=user_id,
+                user_id=self._validated_user_id(user_id),
             )
         except Exception as e:
             logger.error(f"Failed to add interaction to memory: {e}")
@@ -75,8 +82,9 @@ class MemoryManager:
         results = {}
         if "short_term" in tiers and self.short_term:
             try:
-                interactions = self.short_term.get_recent_interactions(limit=top_k, user_id=user_id)
-                facts = self.short_term.get_facts(user_id=user_id)
+                uid = self._validated_user_id(user_id)
+                interactions = self.short_term.get_recent_interactions(limit=top_k, user_id=uid)
+                facts = self.short_term.get_facts(user_id=uid)
                 results["short_term"] = {
                     "interactions": interactions,
                     "facts": facts,
@@ -115,7 +123,7 @@ class MemoryManager:
         }
         if self.short_term:
             try:
-                stats["tiers"]["short_term"] = self.short_term.get_stats(user_id=user_id)
+                stats["tiers"]["short_term"] = self.short_term.get_stats(user_id=self._validated_user_id(user_id))
             except Exception as e:
                 stats["tiers"]["short_term"] = {"error": str(e)}
         return stats
@@ -123,7 +131,7 @@ class MemoryManager:
     def clear_all(self, user_id: str | None = None) -> bool:
         if self.short_term:
             try:
-                self.short_term.clear(user_id=user_id)
+                self.short_term.clear(user_id=self._validated_user_id(user_id))
             except Exception as e:
                 logger.error(f"Failed to clear short-term memory: {e}")
                 return False

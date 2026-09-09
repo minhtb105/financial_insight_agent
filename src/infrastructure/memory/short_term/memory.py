@@ -62,10 +62,13 @@ class ShortTermMemory:
     # Key resolution (per-user isolation)
     # ------------------------------------------------------------------
     def _resolve_key(self, base: str, user_id: str | None) -> str:
-        uid = user_id or self._user_id
-        if uid:
+        # Use explicit None check: "" is a valid (but empty) id and should not fallback to global.
+        uid = user_id if user_id is not None else self._user_id
+        if uid is not None and uid != "":
             return f"{base}:{uid}"
-        return base
+        # No user -> isolate as "anonymous" instead of global leak.
+        # Callers that want global must explicitly pass "" with knowledge.
+        return f"{base}:anonymous" if base.startswith("memory:") else base
 
     def _msg_key(self, user_id: str | None = None) -> str:
         return self._resolve_key("memory:short_term:messages", user_id)
@@ -238,15 +241,16 @@ class ShortTermMemory:
 
     def clear(self, user_id: str | None = None) -> bool:
         try:
-            # If user_id specified, clear only that user's keys. If None and legacy _user_id set, clear that. If both None, clear global.
-            if user_id:
-                msg_key = f"memory:short_term:messages:{user_id}"
-                facts_key = f"memory:short_term:facts:{user_id}"
-                summary_key = f"memory:short_term:summary:{user_id}"
-                result = self._redis.delete_multi([msg_key, facts_key, summary_key])
-            else:
-                result = self._redis.delete_multi([self._message_list_key, self._facts_key, self._summary_key])
-            logger.info("Cleared short-term memory (user=%s)", user_id or self._user_id or "global")
+            msg_key = self._msg_key(user_id)
+            facts_key = self._facts_key_for(user_id)
+            summary_key = self._summary_key_for(user_id)
+            # Also clean legacy global keys when clearing anonymous to avoid orphaned data.
+            keys_to_delete = [msg_key, facts_key, summary_key]
+            if (user_id is None and self._user_id is None) or (user_id == "anonymous"):
+                # Legacy global keys without suffix (pre-fix) -> delete once.
+                keys_to_delete.extend(["memory:short_term:messages", "memory:short_term:facts", "memory:short_term:summary"])
+            result = self._redis.delete_multi(keys_to_delete)
+            logger.info("Cleared short-term memory (user=%s)", user_id if user_id is not None else (self._user_id or "anonymous"))
             return result
         except RedisError as e:
             logger.error(f"Failed to clear short-term memory: {e}")

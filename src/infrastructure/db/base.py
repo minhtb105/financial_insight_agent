@@ -21,13 +21,26 @@ _session_factory: async_sessionmaker[AsyncSession] | None = None
 
 
 def _resolve_database_url() -> str:
+    # Prefer explicit env, then shared config (which defaults to sqlite for local dev)
     url = os.getenv("DATABASE_URL", "")
     if url:
         return url
-    # Fallback to sync-style or local postgres, then sqlite
+    try:
+        from shared.config import DATABASE_URL as cfg_url
+
+        if cfg_url:
+            return cfg_url
+    except Exception:
+        pass
+    # Fallback to sync-style conversion, preserving query params
     sync_url = os.getenv("DATABASE_SYNC_URL", "")
     if sync_url:
-        return sync_url.replace("postgresql://", "postgresql+asyncpg://").replace("sqlite://", "sqlite+aiosqlite://")
+        # Use single replace to preserve query string
+        if sync_url.startswith("postgresql://"):
+            return sync_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        if sync_url.startswith("sqlite://"):
+            return sync_url.replace("sqlite://", "sqlite+aiosqlite://", 1)
+        return sync_url
     return "sqlite+aiosqlite:///./data/app.db"
 
 

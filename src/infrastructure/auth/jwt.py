@@ -15,7 +15,15 @@ def create_access_token(
     expires_delta: timedelta | None = None,
 ) -> str:
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=JWT_EXPIRE_MINUTES))
+    # Clamp expires_delta to [1 min, 24h] to avoid immortal/expired tokens
+    if expires_delta is not None:
+        total_seconds = expires_delta.total_seconds()
+        clamped_seconds = max(60, min(total_seconds, 86400))
+        expires_delta = timedelta(seconds=clamped_seconds)
+    else:
+        # Use clamped config value (already clamped in shared.config)
+        expires_delta = timedelta(minutes=JWT_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc) + expires_delta
     to_encode.update({"exp": expire, "iat": datetime.now(timezone.utc)})
     return jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
