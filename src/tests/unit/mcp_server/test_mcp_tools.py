@@ -8,7 +8,7 @@ import mcp_server.tools  # noqa: F401 — ensure registration
 
 
 def test_mcp_has_13_tools():
-    assert len(mcp._tool_manager._tools) == 13
+    assert len(mcp._tool_manager._tools) == 14
 
 
 def test_mcp_tool_names():
@@ -26,6 +26,7 @@ def test_mcp_tool_names():
         "forecast_stock_price",
         "analyze_sector",
         "search_knowledge",
+        "generate_chart_spec",
     }
     assert set(mcp._tool_manager._tools.keys()) == expected
 

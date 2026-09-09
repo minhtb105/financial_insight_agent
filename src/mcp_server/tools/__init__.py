@@ -13,3 +13,4 @@ from . import alerts  # noqa: F401
 from . import forecast  # noqa: F401
 from . import sector  # noqa: F401
 from . import knowledge  # noqa: F401
+from . import visualize  # noqa: F401
