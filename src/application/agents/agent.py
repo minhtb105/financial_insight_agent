@@ -34,6 +34,7 @@ from infrastructure.observability import get_logger
 from infrastructure.observability.logging.logger import request_id_var
 from infrastructure.observability.tracing import SpanKind, TracingCallbackHandler, get_tracer
 from application.agents.hybrid_splitter import HybridQuerySplitter
+from application.agents.reformulator import QueryReformulator
 from application.agents.multi_query_runner import run_queries_parallel
 from application.agents.response_synthesizer import ResponseSynthesizer
 from application.agents.fact_verifier import FactVerifier
@@ -114,6 +115,7 @@ class StockAgent:
         try:
             self.llm_provider = LLMProvider()
             self.splitter = HybridQuerySplitter(llm_provider=self.llm_provider)
+            self.reformulator = QueryReformulator(llm_provider=self.llm_provider)
             # MCP tools carry their own descriptions/JSONSchema — no prompt tax
             if self.tools:
                 self.llm = self.llm_provider.get_tool_calling_llm(self.tools)
@@ -126,12 +128,14 @@ class StockAgent:
             logger.error("No LLM provider available — agent running in degraded mode")
             self.llm_provider = None
             self.splitter = None
+            self.reformulator = None
             self.llm = None
             self._synthesizer = None
         except Exception:
             logger.exception("Unexpected agent init failure — starting in degraded mode")
             self.llm_provider = None
             self.splitter = None
+            self.reformulator = None
             self.llm = None
             self._synthesizer = None
 
@@ -507,13 +511,37 @@ class StockAgent:
     # Shared preamble: memory + split
     # ------------------------------------------------------------------
 
-    def _prepare_and_split(self, query: str, user_id: str | None = None) -> tuple[str, list[str]]:
-        """Build memory context and split query into sub-queries."""
+    def _prepare_and_split(self, query: str, user_id: str | None = None) -> tuple[str, list[str], dict]:
+        """Build memory context, rewrite follow-up, and split into sub-queries.
+
+        Returns (memory_context, sub_queries, reform) where reform holds
+        {"reformulated", "entities", "topics"}. The raw query stays the source
+        of truth for guardrails/synthesizer; the rewritten form feeds the
+        splitter and the ReAct loop.
+        """
         memory_context = self._build_memory_context(query, user_id=user_id)
-        sub_queries = self.splitter.split(query) if self.splitter else [query]
+        reformulated, entities, topics = query, [], []
+        if self.reformulator:
+            try:
+                from infrastructure.memory.memory_manager import get_memory_manager
+
+                mem_inputs: dict = {}
+                mgr = get_memory_manager()
+                if mgr:
+                    mem_inputs = mgr.build_reformulation_inputs(query, user_id=user_id)
+                reformulated, entities, topics = self.reformulator.rewrite(
+                    query, mem_inputs=mem_inputs, user_id=user_id
+                )
+            except Exception as e:
+                logger.warning("Reformulation failed — using raw query", extra={"error": str(e)})
+        sub_queries = self.splitter.split(reformulated) if self.splitter else [reformulated]
         if not sub_queries:
-            sub_queries = [query]
-        return memory_context, sub_queries
+            sub_queries = [reformulated]
+        return memory_context, sub_queries, {
+            "reformulated": reformulated,
+            "entities": entities,
+            "topics": topics,
+        }
 
     # ------------------------------------------------------------------
     # Multi-query fan-out via HybridQuerySplitter
@@ -540,6 +568,29 @@ class StockAgent:
         except Exception as mem_err:
             logger.warning("Failed to search memory", extra={"error": str(mem_err)})
             return ""
+
+    def _update_summary_state(
+        self,
+        user_id: str | None,
+        entities: list,
+        topics: list,
+        raw_query: str,
+        rewritten_query: str,
+    ) -> None:
+        """Best-effort summary update via SummaryUpdater (Phase 3 module)."""
+        try:
+            from application.agents.summary_updater import SummaryUpdater
+
+            updater = SummaryUpdater()
+            updater.update(
+                user_id=user_id,
+                entities=entities,
+                topics=topics,
+                raw_query=raw_query,
+                rewritten_query=rewritten_query,
+            )
+        except Exception as e:
+            logger.warning("Summary update failed", extra={"error": str(e)})
 
     def _run_single(self, query: str, rid: str, memory_context: str = "", user_id: str | None = None, active_chart_summary: str | None = None) -> str:
         with suppress(Exception):
@@ -593,15 +644,17 @@ class StockAgent:
 
     def _execute_graph(self, query: str, rid: str, trace_span=None, user_id: str | None = None, active_chart_spec: dict | None = None) -> str:
         try:
-            memory_context, sub_queries = self._prepare_and_split(query, user_id=user_id)
+            memory_context, sub_queries, reform = self._prepare_and_split(query, user_id=user_id)
+            effective_query = reform.get("reformulated") or query
             active_summary = _summarize_chart_spec(active_chart_spec)
 
             if trace_span is not None:
                 trace_span.attributes["num_sub_queries"] = len(sub_queries)
                 trace_span.attributes["sub_queries"] = sub_queries
+                trace_span.attributes["reformulated_query"] = effective_query
 
             if len(sub_queries) <= 1:
-                result = self._run_single(query, rid, memory_context=memory_context, user_id=user_id, active_chart_summary=active_summary)
+                result = self._run_single(effective_query, rid, memory_context=memory_context, user_id=user_id, active_chart_summary=active_summary)
             else:
                 def _run_with_memory(q: str, r: str) -> str:
                     return self._run_single(q, r, memory_context=memory_context, user_id=user_id, active_chart_summary=active_summary)
@@ -625,8 +678,16 @@ class StockAgent:
                             "request_id": rid,
                             "has_active_chart": bool(active_summary),
                             "active_chart": (active_summary or "")[:200],
+                            "reformulated": effective_query,
                         },
                         user_id=user_id,
+                    )
+                    self._update_summary_state(
+                        user_id=user_id,
+                        entities=reform.get("entities") or [],
+                        topics=reform.get("topics") or [],
+                        raw_query=query,
+                        rewritten_query=effective_query,
                     )
                 except Exception as mem_err:
                     logger.warning("Failed to record memory", extra={"request_id": rid, "error": str(mem_err)})
@@ -757,17 +818,19 @@ class StockAgent:
             ) as span:
                 start_time = time.time()
                 collected: list[str] = []
-                memory_context, sub_queries = self._prepare_and_split(query, user_id=user_id)
+                memory_context, sub_queries, reform = self._prepare_and_split(query, user_id=user_id)
+                effective_query = reform.get("reformulated") or query
                 active_summary = _summarize_chart_spec(active_chart_spec)
                 if span is not None:
                     span.attributes["num_sub_queries"] = len(sub_queries)
                     span.attributes["sub_queries"] = sub_queries
+                    span.attributes["reformulated_query"] = effective_query
                     span.attributes["user_id"] = user_id or "anonymous"
                     span.attributes["has_active_chart"] = bool(active_summary)
 
                 if len(sub_queries) <= 1:
                     try:
-                        for token in self._run_single_stream(query, rid, memory_context=memory_context, user_id=user_id, active_chart_summary=active_summary):
+                        for token in self._run_single_stream(effective_query, rid, memory_context=memory_context, user_id=user_id, active_chart_summary=active_summary):
                             if token:
                                 collected.append(token)
                                 yield token
@@ -820,8 +883,16 @@ class StockAgent:
                                     "stream": True,
                                     "has_active_chart": bool(active_summary),
                                     "active_chart": (active_summary or "")[:200],
+                                    "reformulated": effective_query,
                                 },
                                 user_id=user_id,
+                            )
+                            self._update_summary_state(
+                                user_id=user_id,
+                                entities=reform.get("entities") or [],
+                                topics=reform.get("topics") or [],
+                                raw_query=query,
+                                rewritten_query=effective_query,
                             )
                     except Exception as mem_err:
                         logger.warning("Failed to record stream memory", extra={"request_id": rid, "error": str(mem_err)})

@@ -56,6 +56,14 @@ class MultiQuery(BaseModel):
     queries: list[str]
 
 
+class ReformulatedQuery(BaseModel):
+    """Self-contained rewrite of a context-dependent follow-up question."""
+
+    rewritten: str
+    entities: list[str] = []
+    topics: list[str] = []
+
+
 class LLMChain:
     def __init__(self, primary, fallback, openai_cb, groq_cb, label: str):
         self._primary = primary
