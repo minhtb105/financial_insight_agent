@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { LayoutDashboard, MessageCircle, Activity, LogOut, TrendingUp } from "lucide-react"
 import { useEffect, useState, useMemo } from "react"
+import { ThemeToggle } from "@/components/theme-toggle"
 
 const NAV_ALL = [
   { href: "/chat", label: "Trò chuyện", icon: MessageCircle, roles: ["user", "admin"] },
@@ -72,6 +73,7 @@ export function Header() {
           )}
         </div>
         <div className="flex items-center gap-3">
+          <ThemeToggle />
           <Badge variant={health === "ok" ? "default" : health === "down" ? "destructive" : "secondary"} className="hidden sm:inline-flex">
             <span className={cn("mr-1.5 h-2 w-2 rounded-full", health === "ok" ? "bg-green-500" : health === "down" ? "bg-red-500" : "bg-yellow-500")} />
             {health === "ok" ? "Agent sẵn sàng" : health === "down" ? "Agent lỗi" : "Đang kiểm tra"}
