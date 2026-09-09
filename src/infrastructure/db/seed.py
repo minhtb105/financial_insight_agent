@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 
@@ -39,12 +40,15 @@ async def seed_admin() -> None:
                 logger.info("Admin user %s already exists", admin_email)
             return
 
+        now = datetime.now(timezone.utc)
         user = User(
             email=admin_email,
             hashed_password=hash_password(admin_password),
             name=admin_name,
             role="admin",
             is_active=True,
+            created_at=now,
+            updated_at=now,
         )
         session.add(user)
         await session.commit()
@@ -64,12 +68,15 @@ async def seed_demo_user() -> None:
         result = await session.execute(select(User).where(User.email == demo_email))
         if result.scalar_one_or_none() is not None:
             return
+        now = datetime.now(timezone.utc)
         user = User(
             email=demo_email,
             hashed_password=hash_password(demo_password),
             name="Nhà đầu tư Demo",
             role="user",
             is_active=True,
+            created_at=now,
+            updated_at=now,
         )
         session.add(user)
         await session.commit()

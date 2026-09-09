@@ -57,30 +57,35 @@ class RedisCache:
         self._serialization_manager = SerializationManager(default_format=serialization_format)
 
     def _connect(self) -> None:
-        """Establish connection to Redis with retry."""
-        max_retries = 2
-        for attempt in range(max_retries):
-            try:
-                self._client = redis.Redis(
-                    host=self.host,
-                    port=self.port,
-                    db=self.db,
-                    password=self.password,
-                    decode_responses=True,
-                    socket_connect_timeout=3,
-                    socket_timeout=3,
-                    retry_on_timeout=True,
-                    health_check_interval=30,
-                )
-
-                self._client.ping()
-                logger.info(f"Connected to Redis at {self.host}:{self.port}")
-                return
-
-            except (ConnectionError, TimeoutError, RedisError) as e:
-                logger.error(f"Failed to connect to Redis (attempt {attempt+1}/{max_retries}): {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(2**attempt)
+        """Establish connection to Redis with fast-fail for local dev without Redis."""
+        # Fast socket probe to avoid redis-py hanging on ping when Redis is down (Windows + retry quirks)
+        import socket as _socket
+        try:
+            _probe = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+            _probe.settimeout(0.5)
+            _probe.connect((self.host, self.port))
+            _probe.close()
+        except Exception:
+            logger.warning(f"Redis probe failed for {self.host}:{self.port} — running without Redis")
+            self._client = None
+            return
+        try:
+            self._client = redis.Redis(
+                host=self.host,
+                port=self.port,
+                db=self.db,
+                password=self.password,
+                decode_responses=True,
+                socket_connect_timeout=1,
+                socket_timeout=1,
+                retry_on_timeout=False,
+                health_check_interval=0,
+            )
+            self._client.ping()
+            logger.info(f"Connected to Redis at {self.host}:{self.port}")
+            return
+        except (ConnectionError, TimeoutError, RedisError) as e:
+            logger.warning(f"Redis not available ({e}) — degraded mode")
         self._client = None
 
     def get_raw_client(self) -> redis.Redis | None:
