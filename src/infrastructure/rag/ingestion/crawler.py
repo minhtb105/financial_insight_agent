@@ -28,7 +28,7 @@ def crawl(start_url: str, max_pages: int = 30, delay: float = DEFAULT_DELAY, ua:
             logger.info("skip robots blocked %s", url)
             continue
         time.sleep(delay)
-        fr = fetch_url(url, delay=0, ua=ua, respect_robots_flag=False)  # already checked
+        fr = fetch_url(url, delay=0, ua=ua, respect_robots_flag=False, verify=False)  # already checked, verify False for HNX
         if fr.status != "ok":
             continue
         html = fr.content if isinstance(fr.content, str) else fr.content.decode("utf-8", errors="ignore")

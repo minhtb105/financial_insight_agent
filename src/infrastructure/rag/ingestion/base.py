@@ -49,13 +49,18 @@ def respect_robots(url: str, ua: str = DEFAULT_UA) -> bool:
         return True
 
 
-def fetch_url(url: str, delay: float = DEFAULT_DELAY, ua: str = DEFAULT_UA, timeout: int = 30, respect_robots_flag: bool = True) -> FetchResult:
+def fetch_url(url: str, delay: float = DEFAULT_DELAY, ua: str = DEFAULT_UA, timeout: int = 30, respect_robots_flag: bool = True, verify: bool = False) -> FetchResult:
     if respect_robots_flag and not respect_robots(url, ua):
         return FetchResult(source_id="", url=url, content=b"", content_type="", etag=None, sha256="", fetched_at="", status="blocked_robots", error="Blocked by robots.txt")
     time.sleep(delay)
-    headers = {"User-Agent": ua, "Accept": "*/*"}
+    # Use browser-like headers to avoid 403 on some sites (thuvienphapluat, hnx)
+    headers = {
+        "User-Agent": ua if "Mozilla" in ua else "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "vi,en;q=0.5",
+    }
     try:
-        resp = requests.get(url, headers=headers, timeout=timeout)
+        resp = requests.get(url, headers=headers, timeout=timeout, verify=verify)
         resp.raise_for_status()
         ctype = resp.headers.get("content-type", "")
         etag = resp.headers.get("etag")

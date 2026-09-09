@@ -6,6 +6,14 @@ import os
 
 from infrastructure.observability import get_logger
 
+# Ensure .env is loaded for OPENAI_API_KEY when run via cli without shell export
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except Exception:
+    pass
+
 logger = get_logger("rag.embedder")
 
 

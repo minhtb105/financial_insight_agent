@@ -9,16 +9,48 @@ from typing import Any
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams, PayloadSchemaType
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except Exception:
+    pass
+
 ALIAS = "finsight_knowledge"
 DEFAULT_DIM = 1536
 BACKUP_KEEP_DAYS = 7
 
+# Cache for embedded client (file lock can only be held by one instance)
+_EMBEDDED_CACHE: dict[str, QdrantClient] = {}
+
 
 def _client() -> QdrantClient:
+    # Priority: 1) QDRANT_PATH (embedded, works without docker/cloud), 2) QDRANT_URL (cloud), 3) host/port (local docker)
+    # Embedded is useful for local dev without docker or when cloud is blocked.
+    path = os.getenv("QDRANT_PATH")
+    if path:
+        # Reuse singleton per path to avoid file lock contention ("already accessed by another instance")
+        if path not in _EMBEDDED_CACHE:
+            _EMBEDDED_CACHE[path] = QdrantClient(path=path, timeout=30)
+        return _EMBEDDED_CACHE[path]
+    url = os.getenv("QDRANT_URL")
+    api_key = os.getenv("QDRANT_API_KEY")
+    # Allow explicit local override: if QDRANT_FORCE_LOCAL=true, ignore URL
+    if os.getenv("QDRANT_FORCE_LOCAL", "false").lower() in ("1", "true", "yes"):
+        url = None
+    if url:
+        return QdrantClient(url=url, api_key=api_key, timeout=30, prefer_grpc=False, check_compatibility=False)
     host = os.getenv("QDRANT_HOST", "localhost")
     port = int(os.getenv("QDRANT_PORT", "6333"))
-    api_key = os.getenv("QDRANT_API_KEY")
-    return QdrantClient(host=host, port=port, api_key=api_key, timeout=30)
+    # For local docker, don't send cloud api_key (causes SSL confusion)
+    local_api_key = None
+    # Only use api_key for local if QDRANT_API_KEY is explicitly for local (check if url is None and host is not cloud)
+    # If QDRANT_URL is set but forced local, we deliberately drop api_key
+    if not url and os.getenv("QDRANT_FORCE_LOCAL", "false").lower() in ("1", "true", "yes"):
+        local_api_key = None
+    else:
+        local_api_key = api_key if not url else None
+    return QdrantClient(host=host, port=port, api_key=local_api_key, timeout=30, prefer_grpc=False, check_compatibility=False, https=False)
 
 
 def _week_label(dt: datetime | None = None) -> str:
@@ -96,12 +128,22 @@ def swap_alias(new_collection: str) -> None:
 
 def upsert_points(collection: str, points: list[dict[str, Any]], batch_size: int = 100) -> int:
     c = _client()
+    # Use PointStruct for compatibility with both local embedded and remote
+    from qdrant_client.http.models import PointStruct
+
     total = 0
     for i in range(0, len(points), batch_size):
         batch = points[i : i + batch_size]
-        # qdrant expects id, vector, payload
-        c.upsert(collection_name=collection, points=batch)  # type: ignore
-        total += len(batch)
+        # Convert dicts to PointStruct if needed (local Qdrant requires objects)
+        struct_batch = []
+        for p in batch:
+            # p is dict with id/vector/payload
+            if isinstance(p, dict):
+                struct_batch.append(PointStruct(id=p["id"], vector=p["vector"], payload=p["payload"]))
+            else:
+                struct_batch.append(p)
+        c.upsert(collection_name=collection, points=struct_batch)  # type: ignore
+        total += len(struct_batch)
     return total
 
 

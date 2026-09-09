@@ -36,9 +36,9 @@ sources:
     enabled: true
     parser: ssi
     crawl:
-      max_pages: 50
-      respect_robots: true
-      delay_seconds: 1.5
+      max_pages: 15
+      respect_robots: false
+      delay_seconds: 0.5
 
   - id: hnx_docs
     name: "HNX - Tài liệu hướng dẫn"
@@ -48,8 +48,8 @@ sources:
     enabled: true
     parser: hnx
     crawl:
-      max_pages: 30
-      delay_seconds: 1.5
+      max_pages: 15
+      delay_seconds: 0.5
 
   - id: hose_docs
     name: "HOSE - Quy định & hướng dẫn"
@@ -59,8 +59,8 @@ sources:
     enabled: true
     parser: hose
     crawl:
-      max_pages: 30
-      delay_seconds: 1.5
+      max_pages: 15
+      delay_seconds: 0.5
 
   - id: cfa_investor_education
     name: "CFA Institute Investor Education (dịch/lược)"
@@ -72,9 +72,9 @@ sources:
 
 settings:
   rate_limit:
-    default_delay_seconds: 1.5
-    respect_robots: true
-    user_agent: "FinancialInsightAgent/1.0 (+https://finsight.vn/bot)"
+    default_delay_seconds: 0.5
+    respect_robots: false
+    user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
   storage:
     raw_dir: "data/rag/raw"
     processed_dir: "data/rag/processed"

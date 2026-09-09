@@ -97,38 +97,79 @@ def run_full_refresh(force: bool = False, week: str | None = None, db_path: Path
             finish_run(run_id, status="failed", error="No chunks", db_path=db_path)
             return {"run_id": run_id, "status": "failed", "error": "No chunks"}
 
-        # 3. Embed
-        embedder = Embedder(model=embed_model)
-        dim = embedder.dim
-        # ensure collection
-        # handle collision: if collection exists, recreate
-        ensure_collection(collection, dim=dim, recreate=True)
-        texts = [c["text"] for c in chunks]
-        vectors = embedder.embed(texts)
+        # save manifest & chunks BEFORE vector store so data persists even if Qdrant down
+        # 3. Embed (try, but allow fallback to no-embedding mode)
+        vector_ok = True
+        embed_error = None
+        vectors: list[list[float]] = []
+        embedder = None  # type: ignore
+        try:
+            embedder = Embedder(model=embed_model)
+            dim = embedder.dim  # type: ignore
+            texts = [c["text"] for c in chunks]
+            vectors = embedder.embed(texts)  # type: ignore
+        except Exception as ee:
+            logger.warning("Embedding failed, will save filesystem only: %s", ee)
+            vector_ok = False
+            embed_error = str(ee)
+            dim = 1536  # type: ignore
 
-        # 4. Upsert
-        points = []
-        for ch, vec in zip(chunks, vectors):
-            pid = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{ch['source_id']}:{ch['chunk_hash']}"))
-            payload = {k: v for k, v in ch.items() if k != "text"}
-            payload["text"] = ch["text"][:2000]  # store truncated for citation
-            payload["week"] = week
-            points.append({"id": pid, "vector": vec, "payload": payload})
-        upsert_points(collection, points, batch_size=100)
-
-        # save manifest & chunks
-        manifest = {"week": week, "run_id": run_id, "collection": collection, "embed_model": embed_model, "embed_dim": dim, "provider": embedder.provider, "sources": source_stats, "chunks_total": len(chunks), "docs_total": len(all_docs)}
+        # ensure we have manifest even in degraded mode
+        manifest = {
+            "week": week,
+            "run_id": run_id,
+            "collection": collection,
+            "embed_model": embed_model,
+            "embed_dim": dim if vector_ok else 0,  # type: ignore
+            "provider": embedder.provider if embedder else "none",  # type: ignore
+            "sources": source_stats,
+            "chunks_total": len(chunks),
+            "docs_total": len(all_docs),
+            "vector_ok": vector_ok,
+            "embed_error": embed_error,
+        }
         (manifests_dir / f"{week}.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
         (processed_dir / f"{week}.jsonl").write_text("\n".join(json.dumps(c, ensure_ascii=False) for c in chunks), encoding="utf-8")
+        # also save raw docs summary for inspection
+        try:
+            (processed_dir / f"{week}.docs.json").write_text(json.dumps(all_docs, ensure_ascii=False, indent=2)[:200000], encoding="utf-8")
+        except Exception:
+            pass
 
-        # 5. Swap alias (blue/green)
-        swap_alias(collection)
-        # 6. Cleanup old backups (>7 days)
-        deleted = cleanup_old_backups(keep_days=7)
+        deleted: list[str] = []
+        if vector_ok and vectors:
+            try:
+                ensure_collection(collection, dim=dim, recreate=True)  # type: ignore
+                # 4. Upsert
+                points = []
+                for ch, vec in zip(chunks, vectors):
+                    pid = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{ch['source_id']}:{ch['chunk_hash']}"))
+                    payload = {k: v for k, v in ch.items() if k != "text"}
+                    payload["text"] = ch["text"][:2000]
+                    payload["week"] = week
+                    points.append({"id": pid, "vector": vec, "payload": payload})
+                upsert_points(collection, points, batch_size=100)
+                # 5. Swap alias (blue/green)
+                swap_alias(collection)
+                # 6. Cleanup old backups (>7 days)
+                deleted = cleanup_old_backups(keep_days=7)
+            except Exception as ve:
+                logger.warning("Vector store failed (Qdrant not running?) — filesystem saved, Qdrant skipped: %s", ve)
+                manifest["vector_error"] = str(ve)
+                manifest["vector_ok"] = False
+                (manifests_dir / f"{week}.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+                vector_ok = False
+        else:
+            logger.info("Skipping Qdrant upsert — no vectors")
 
-        status = "success" if len([s for s in source_stats if s["docs"] == 0]) == 0 else "partial"
+        # determine status — partial if any source had 0 docs or vector failed
+        failed_sources = len([s for s in source_stats if s["docs"] == 0])
+        status = "success" if failed_sources == 0 and manifest.get("vector_ok") else "partial"
+        # if vector failed but docs ok, keep partial not failed
+        if failed_sources == 0 and not manifest.get("vector_ok"):
+            status = "partial"
         finish_run(run_id, status=status, docs_total=len(all_docs), chunks_total=len(chunks), db_path=db_path)
-        logger.info("RAG run %s done status=%s chunks=%s alias->%s deleted=%s", run_id, status, len(chunks), collection, deleted)
+        logger.info("RAG run %s done status=%s chunks=%s alias->%s deleted=%s vector_ok=%s", run_id, status, len(chunks), collection, deleted, manifest.get("vector_ok"))
         return {"run_id": run_id, "week": week, "collection": collection, "status": status, "docs_total": len(all_docs), "chunks_total": len(chunks), "deleted": deleted, "manifest": manifest}
 
     except Exception as e:
