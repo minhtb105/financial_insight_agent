@@ -21,11 +21,11 @@ export async function POST(req: NextRequest) {
 
   const target = `${getBackendUrl()}/api/v1/ask-stream`
 
-  // Forward to FastAPI and proxy SSE
+  // Forward to FastAPI and proxy SSE (giữ activeChartSpec để follow-up về chart)
   const upstream = await fetch(target, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ query }),
+    body: JSON.stringify({ query, activeChartSpec: body.activeChartSpec ?? null }),
   })
 
   if (!upstream.ok || !upstream.body) {

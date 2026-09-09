@@ -1,6 +1,7 @@
 "use client"
 import { useCallback, useRef } from "react"
 import { parseSSEChunk, type SSEEvent } from "@/lib/sse"
+import { parseChartSpecEvent } from "@/lib/chart-spec"
 import { useChatStore } from "@/store/chatStore"
 
 export function useChatStream() {
@@ -20,10 +21,12 @@ export function useChatStream() {
       abortRef.current = controller
 
       try {
+        const { chartSpecs, activeChartId } = useChatStore.getState()
+        const activeChartSpec = chartSpecs.find((c) => c.id === activeChartId)?.spec ?? null
         const res = await fetch("/api/ask-stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query }),
+          body: JSON.stringify({ query, activeChartSpec }),
           signal: controller.signal,
         })
 
@@ -43,15 +46,15 @@ export function useChatStream() {
           buffer += decoder.decode(value, { stream: true })
           const { events, rest } = parseSSEChunk(buffer)
           buffer = rest
-          for (const ev of events) handleEvent(ev)
+          for (const ev of events) handleEvent(ev, assistantId)
         }
         // flush remaining
         if (buffer.trim()) {
           const { events } = parseSSEChunk(buffer + "\n\n")
-          for (const ev of events) handleEvent(ev)
+          for (const ev of events) handleEvent(ev, assistantId)
         }
 
-        function handleEvent(ev: SSEEvent) {
+        function handleEvent(ev: SSEEvent, originMessageId: string) {
           if (ev.event === "chunk") {
             // chunk data may be plain string or JSON escaped?
             let chunk = ev.data
@@ -61,6 +64,15 @@ export function useChatStream() {
               if (typeof parsed === "string") chunk = parsed
             } catch {}
             appendToLastAssistant(chunk)
+          } else if (ev.event === "chart_spec") {
+            const spec = parseChartSpecEvent(ev.data)
+            if (spec) {
+              useChatStore.getState().setChartSpec(spec, originMessageId)
+            } else {
+              appendToLastAssistant("\n\n⚠️ Dashboard: nhận chart-spec không hợp lệ, bỏ qua.")
+            }
+          } else if (ev.event === "chart_error") {
+            appendToLastAssistant(`\n\n⚠️ Dashboard: ${ev.data.slice(0, 300)}`)
           } else if (ev.event === "final") {
             try {
               const final = JSON.parse(ev.data)

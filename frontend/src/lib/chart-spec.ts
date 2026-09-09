@@ -56,6 +56,20 @@ export function routeChartKind(chart_type: string): "tradingview" | "recharts" |
   return "recharts"
 }
 
+/** Mirror bảng route backend (domain/entities/chart_spec.py) — override local không cần backend. */
+export const CHART_LIBRARY_ROUTE: Record<ChartType, string> = {
+  candlestick: "tradingview-lightweight-charts",
+  line: "recharts",
+  bar: "recharts",
+  area: "recharts",
+  pie: "recharts",
+  donut: "recharts",
+  waterfall: "recharts",
+  scatter: "recharts",
+  heatmap: "echarts",
+  treemap: "echarts",
+}
+
 export function suitabilityWarning(
   chart_type: ChartType,
   rowCount: number,
