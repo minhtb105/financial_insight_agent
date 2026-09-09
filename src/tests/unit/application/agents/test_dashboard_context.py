@@ -90,7 +90,11 @@ def test_execute_graph_threads_active_spec_to_single():
         return "ok"
 
     with (
-        patch.object(agent, "_prepare_and_split", return_value=("", ["only query"])),
+        patch.object(
+            agent,
+            "_prepare_and_split",
+            return_value=("", ["only query"], {"reformulated": "only query", "entities": [], "topics": []}),
+        ),
         patch.object(agent, "_run_single", side_effect=fake_run_single),
         patch("application.agents.agent.get_memory_manager", return_value=None),
     ):
@@ -109,7 +113,11 @@ def test_execute_graph_without_spec_passes_none():
         return "ok"
 
     with (
-        patch.object(agent, "_prepare_and_split", return_value=("", ["only query"])),
+        patch.object(
+            agent,
+            "_prepare_and_split",
+            return_value=("", ["only query"], {"reformulated": "only query", "entities": [], "topics": []}),
+        ),
         patch.object(agent, "_run_single", side_effect=fake_run_single),
         patch("application.agents.agent.get_memory_manager", return_value=None),
     ):
