@@ -37,6 +37,16 @@ dependencies = [
     "langchain-mcp-adapters>=0.3.0",
     "uvicorn>=0.30.0",
     "starlette>=0.38.0",
+    "sqlalchemy[asyncio]>=2.0.0",
+    "asyncpg>=0.29.0",
+    "aiosqlite>=0.20.0",
+    "alembic>=1.13.0",
+    "passlib[bcrypt]>=1.7.4",
+    "bcrypt>=4.1.0",
+    "python-jose[cryptography]>=3.3.0",
+    "python-multipart>=0.0.9",
+    "email-validator>=2.1.0",
+    "pydantic[email]>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -145,6 +155,12 @@ lines-after-imports = 2
 "__init__.py" = ["F401"]
 # LangChain callback signatures require these parameter names even when unused
 "src/infrastructure/observability/tracing/langchain_handler.py" = ["ARG002"]
+"src/infrastructure/auth/dependencies.py" = ["TCH"]
+"src/infrastructure/db/models/user.py" = ["TCH"]
+"src/interfaces/api/routes/auth.py" = ["TCH"]
+"src/interfaces/api/routes/traces.py" = ["TCH"]
+"src/interfaces/api/routes/memory.py" = ["TCH"]
+"src/application/agents/agent.py" = ["ARG002"]
 
 [tool.mypy]
 python_version = "3.13"

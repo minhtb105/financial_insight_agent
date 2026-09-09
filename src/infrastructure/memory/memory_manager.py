@@ -2,6 +2,7 @@
 Memory manager for the financial insight agent.
 
 Manages short-term Redis-backed memory with periodic cleanup.
+Supports per-user isolation via user_id.
 """
 
 import atexit
@@ -27,19 +28,16 @@ class MemoryConfig:
 class MemoryManager:
     """
     Orchestrates short-term memory with periodic cleanup.
+    All methods support optional user_id for per-user isolation.
     """
 
     def __init__(self, config: MemoryConfig | None = None):
         self.config = config or MemoryConfig()
-
         self.short_term = get_short_term_memory()
-
         self._cleanup_lock = threading.Lock()
         self._last_cleanup = datetime.now(timezone.utc)
-
         self._stop_event = threading.Event()
         self._cleanup_task = None
-
         logger.info("Initialized MemoryManager with short-term memory")
 
     def add_interaction(
@@ -48,17 +46,18 @@ class MemoryManager:
         agent_response: str,
         context: dict[str, Any] | None = None,
         confidence: float = 0.5,
+        user_id: str | None = None,
     ) -> bool:
         if not self.short_term:
             logger.error("Short-term memory not available")
             return False
-
         try:
             return self.short_term.add_interaction(
                 user_query=user_query,
                 agent_response=agent_response,
                 context=context,
                 confidence=confidence,
+                user_id=user_id,
             )
         except Exception as e:
             logger.error(f"Failed to add interaction to memory: {e}")
@@ -70,14 +69,14 @@ class MemoryManager:
         query_type: str | None = None,
         memory_tiers: list[str] | None = None,
         top_k: int = 10,
+        user_id: str | None = None,
     ) -> dict[str, list[Any]]:
         tiers = memory_tiers or ["short_term"]
         results = {}
-
         if "short_term" in tiers and self.short_term:
             try:
-                interactions = self.short_term.get_recent_interactions(limit=top_k)
-                facts = self.short_term.get_facts()
+                interactions = self.short_term.get_recent_interactions(limit=top_k, user_id=user_id)
+                facts = self.short_term.get_facts(user_id=user_id)
                 results["short_term"] = {
                     "interactions": interactions,
                     "facts": facts,
@@ -86,20 +85,15 @@ class MemoryManager:
             except Exception as e:
                 logger.error(f"Failed to search short-term memory: {e}")
                 results["short_term"] = {"error": str(e)}
-
         return results
 
     def _check_cleanup_trigger(self) -> None:
         if not self.config.auto_cleanup_enabled:
             return
-
         with self._cleanup_lock:
             now = datetime.now(timezone.utc)
-            if (
-                now - self._last_cleanup
-            ).total_seconds() < self.config.cleanup_interval_hours * 3600:
+            if (now - self._last_cleanup).total_seconds() < self.config.cleanup_interval_hours * 3600:
                 return
-
             self._perform_cleanup()
             self._last_cleanup = now
 
@@ -110,7 +104,7 @@ class MemoryManager:
             except Exception as e:
                 logger.error(f"Failed to cleanup short-term memory: {e}")
 
-    def get_stats(self) -> dict[str, Any]:
+    def get_stats(self, user_id: str | None = None) -> dict[str, Any]:
         stats = {
             "config": {
                 "auto_cleanup_enabled": self.config.auto_cleanup_enabled,
@@ -121,15 +115,15 @@ class MemoryManager:
         }
         if self.short_term:
             try:
-                stats["tiers"]["short_term"] = self.short_term.get_stats()
+                stats["tiers"]["short_term"] = self.short_term.get_stats(user_id=user_id)
             except Exception as e:
                 stats["tiers"]["short_term"] = {"error": str(e)}
         return stats
 
-    def clear_all(self) -> bool:
+    def clear_all(self, user_id: str | None = None) -> bool:
         if self.short_term:
             try:
-                self.short_term.clear()
+                self.short_term.clear(user_id=user_id)
             except Exception as e:
                 logger.error(f"Failed to clear short-term memory: {e}")
                 return False
@@ -139,7 +133,6 @@ class MemoryManager:
         if self._cleanup_task is None:
             self._cleanup_task = threading.Thread(target=self._background_cleanup_loop, daemon=True)
             self._cleanup_task.start()
-
         atexit.register(self.stop_background_tasks)
         logger.info("Started background memory management tasks")
 

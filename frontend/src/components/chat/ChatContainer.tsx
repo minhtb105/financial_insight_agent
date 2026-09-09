@@ -52,6 +52,14 @@ export function ChatContainer() {
     await send(q)
   }
 
+  const handleClear = async () => {
+    clear()
+    localStorage.removeItem(storageKey)
+    try {
+      await fetch("/api/memory", { method: "DELETE" })
+    } catch {}
+  }
+
   return (
     <div className="flex h-[calc(100vh-3.5rem-3rem)] md:h-[calc(100vh-3.5rem)] flex-col">
       <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gradient-to-b from-background to-muted/20">
@@ -110,7 +118,7 @@ export function ChatContainer() {
                   <Send className="h-4 w-4" />
                 </Button>
               )}
-              <Button variant="ghost" size="icon" onClick={clear} title="Xóa lịch sử">
+              <Button variant="ghost" size="icon" onClick={handleClear} title="Xóa lịch sử">
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>

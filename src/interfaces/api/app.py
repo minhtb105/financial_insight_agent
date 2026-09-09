@@ -6,10 +6,14 @@ from collections import deque
 from contextlib import asynccontextmanager, suppress
 import time
 
-from fastapi import FastAPI, APIRouter, Request, HTTPException
+from fastapi import Depends, FastAPI, APIRouter, Request, HTTPException
+from interfaces.api.routes.auth import router as auth_router
 from interfaces.api.routes.market import router as market_router
+from interfaces.api.routes.memory import router as memory_router
 from interfaces.api.routes.rag import router as rag_router
 from interfaces.api.routes.traces import router as traces_router
+from infrastructure.auth.dependencies import get_current_user
+from infrastructure.db.models.user import User
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
@@ -147,6 +151,23 @@ async def lifespan(_app: FastAPI):
         init_deps()
     except Exception as e:
         _request_logger.error("Dependencies init failed", extra={"error": str(e)})
+
+    # DB init + seed admin (non-blocking)
+    try:
+        from infrastructure.db.base import init_db
+
+        await init_db()
+        _request_logger.info("DB tables ensured")
+    except Exception as e:
+        _request_logger.warning("DB init failed: %s", e)
+    try:
+        from infrastructure.db.seed import seed_admin, seed_demo_user
+
+        await seed_admin()
+        await seed_demo_user()
+    except Exception as e:
+        _request_logger.warning("DB seed failed: %s", e)
+
     try:
         agent = StockAgent()
         _request_logger.info("Agent initialized successfully")
@@ -178,6 +199,12 @@ async def lifespan(_app: FastAPI):
         from infrastructure.rag.scheduler import stop_scheduler
 
         stop_scheduler()
+    except Exception:
+        pass
+    try:
+        from infrastructure.db.base import close_db
+
+        await close_db()
     except Exception:
         pass
     shutdown_deps()
@@ -342,14 +369,19 @@ async def check_guardrails(query: str, request: Request):
 @api_router.post(
     "/ask-stream",
     summary="Gửi câu hỏi chứng khoán (streaming)",
-    description="Nhận câu hỏi tiếng Việt và trả về câu trả lời theo dạng SSE stream.",
+    description="Nhận câu hỏi tiếng Việt và trả về câu trả lời theo dạng SSE stream. Yêu cầu JWT Bearer token.",
     responses={
         200: {"description": "SSE stream response"},
         400: {"description": "Query rỗng hoặc không hợp lệ"},
+        401: {"description": "Chưa đăng nhập"},
         429: {"description": "Rate limit exceeded"},
     },
 )
-async def ask_stock_agent_stream(body: QueryRequest, request: Request):
+async def ask_stock_agent_stream(
+    body: QueryRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+):
     request_id = request.state.request_id
     start_time = time.time()
 
@@ -380,7 +412,7 @@ async def ask_stock_agent_stream(body: QueryRequest, request: Request):
 
                 def _produce():
                     try:
-                        for chunk in agent.run_stream(body.query, request_id=request_id):
+                        for chunk in agent.run_stream(body.query, request_id=request_id, user_id=current_user.id):
                             if cancel_event.is_set():
                                 return
                             try:
@@ -483,6 +515,8 @@ async def ping():
         headers={"Cache-Control": "no-cache"},
     )
 
+api_router.include_router(auth_router)
+api_router.include_router(memory_router)
 api_router.include_router(traces_router)
 api_router.include_router(rag_router)
 api_router.include_router(market_router)

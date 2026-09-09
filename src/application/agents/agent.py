@@ -466,9 +466,9 @@ class StockAgent:
     # Shared preamble: memory + split
     # ------------------------------------------------------------------
 
-    def _prepare_and_split(self, query: str) -> tuple[str, list[str]]:
+    def _prepare_and_split(self, query: str, user_id: str | None = None) -> tuple[str, list[str]]:
         """Build memory context and split query into sub-queries."""
-        memory_context = self._build_memory_context(query)
+        memory_context = self._build_memory_context(query, user_id=user_id)
         sub_queries = self.splitter.split(query) if self.splitter else [query]
         if not sub_queries:
             sub_queries = [query]
@@ -478,13 +478,13 @@ class StockAgent:
     # Multi-query fan-out via HybridQuerySplitter
     # ------------------------------------------------------------------
 
-    def _build_memory_context(self, query: str) -> str:
+    def _build_memory_context(self, query: str, user_id: str | None = None) -> str:
         """Search past interactions for context relevant to the current query."""
         memory_mgr = get_memory_manager()
         if not memory_mgr:
             return ""
         try:
-            mem_results = memory_mgr.search_memory(query=query, top_k=3)
+            mem_results = memory_mgr.search_memory(query=query, top_k=3, user_id=user_id)
             tier_data = mem_results.get("short_term", {})
             if not tier_data or "error" in tier_data:
                 return ""
@@ -500,7 +500,7 @@ class StockAgent:
             logger.warning("Failed to search memory", extra={"error": str(mem_err)})
             return ""
 
-    def _run_single(self, query: str, rid: str, memory_context: str = "") -> str:
+    def _run_single(self, query: str, rid: str, memory_context: str = "", user_id: str | None = None) -> str:
         with suppress(Exception):
             request_id_var.set(rid)
         tracer = get_tracer()
@@ -549,19 +549,19 @@ class StockAgent:
             with suppress(Exception):
                 request_id_var.set(None)
 
-    def _execute_graph(self, query: str, rid: str, trace_span=None) -> str:
+    def _execute_graph(self, query: str, rid: str, trace_span=None, user_id: str | None = None) -> str:
         try:
-            memory_context, sub_queries = self._prepare_and_split(query)
+            memory_context, sub_queries = self._prepare_and_split(query, user_id=user_id)
 
             if trace_span is not None:
                 trace_span.attributes["num_sub_queries"] = len(sub_queries)
                 trace_span.attributes["sub_queries"] = sub_queries
 
             if len(sub_queries) <= 1:
-                result = self._run_single(query, rid, memory_context=memory_context)
+                result = self._run_single(query, rid, memory_context=memory_context, user_id=user_id)
             else:
                 def _run_with_memory(q: str, r: str) -> str:
-                    return self._run_single(q, r, memory_context=memory_context)
+                    return self._run_single(q, r, memory_context=memory_context, user_id=user_id)
                 merged = run_queries_parallel(
                     sub_queries=sub_queries,
                     request_id=rid,
@@ -581,6 +581,7 @@ class StockAgent:
                             "sub_queries": sub_queries,
                             "request_id": rid,
                         },
+                        user_id=user_id,
                     )
                 except Exception as mem_err:
                     logger.warning("Failed to record memory", extra={"request_id": rid, "error": str(mem_err)})
@@ -604,7 +605,7 @@ class StockAgent:
             return existing
         return str(uuid.uuid4())
 
-    def run(self, query: str, request_id: str | None = None) -> str:
+    def run(self, query: str, request_id: str | None = None, user_id: str | None = None) -> str:
         rid = self._resolve_request_id(request_id)
         with suppress(Exception):
             request_id_var.set(rid)
@@ -616,9 +617,10 @@ class StockAgent:
             ) as span:
                 start_time = time.time()
                 try:
-                    result = self._execute_graph(query, rid, trace_span=span)
+                    result = self._execute_graph(query, rid, trace_span=span, user_id=user_id)
                     if span is not None:
                         span.outputs = {"answer": str(result)[:4000]}
+                        span.attributes["user_id"] = user_id or "anonymous"
                     return result
                 finally:
                     latency = time.time() - start_time
@@ -633,7 +635,7 @@ class StockAgent:
             with suppress(Exception):
                 request_id_var.set(None)
 
-    def _run_single_stream(self, query: str, rid: str, memory_context: str = ""):
+    def _run_single_stream(self, query: str, rid: str, memory_context: str = "", user_id: str | None = None):
         try:
             request_id_var.set(rid)
         except Exception as exc:
@@ -696,7 +698,7 @@ class StockAgent:
             )
             yield "Xin lỗi, đã xảy ra lỗi khi xử lý yêu cầu. Vui lòng thử lại sau."
 
-    def run_stream(self, query: str, request_id: str | None = None):
+    def run_stream(self, query: str, request_id: str | None = None, user_id: str | None = None):
         rid = self._resolve_request_id(request_id)
         with suppress(Exception):
             request_id_var.set(rid)
@@ -708,14 +710,15 @@ class StockAgent:
             ) as span:
                 start_time = time.time()
                 collected: list[str] = []
-                memory_context, sub_queries = self._prepare_and_split(query)
+                memory_context, sub_queries = self._prepare_and_split(query, user_id=user_id)
                 if span is not None:
                     span.attributes["num_sub_queries"] = len(sub_queries)
                     span.attributes["sub_queries"] = sub_queries
+                    span.attributes["user_id"] = user_id or "anonymous"
 
                 if len(sub_queries) <= 1:
                     try:
-                        for token in self._run_single_stream(query, rid, memory_context=memory_context):
+                        for token in self._run_single_stream(query, rid, memory_context=memory_context, user_id=user_id):
                             if token:
                                 collected.append(token)
                                 yield token
@@ -733,7 +736,7 @@ class StockAgent:
                         )
                         yield "Xin lỗi, đã xảy ra lỗi khi xử lý yêu cầu. Vui lòng thử lại sau."
                 else:
-                    result = self._execute_graph(query, rid)
+                    result = self._execute_graph(query, rid, user_id=user_id)
                     collected.append(result)
                     import re
                     _WORD_CHUNK_SIZE = 5
@@ -754,6 +757,20 @@ class StockAgent:
                         "latency_ms": round(latency * 1000, 2),
                     },
                 )
+                # Persist interaction for streaming single-query path (multi-query already saved via _execute_graph)
+                if collected and len(sub_queries) <= 1:
+                    try:
+                        from infrastructure.memory.memory_manager import get_memory_manager as _get_mm
+                        _mm = _get_mm()
+                        if _mm:
+                            _mm.add_interaction(
+                                user_query=query,
+                                agent_response="".join(collected),
+                                context={"request_id": rid, "stream": True},
+                                user_id=user_id,
+                            )
+                    except Exception as mem_err:
+                        logger.warning("Failed to record stream memory", extra={"request_id": rid, "error": str(mem_err)})
         finally:
             with suppress(Exception):
                 request_id_var.set(None)

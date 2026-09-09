@@ -6,6 +6,7 @@ Features:
 - 2-hour TTL with LTRIM policy
 - RDB + AOF persistence
 - Automatic cleanup and migration to episodic memory
+- Per-user isolation via user_id suffix on Redis keys
 """
 
 import logging
@@ -33,18 +34,6 @@ class ShortTermMemory:
         max_messages: int = 100,
         migration_threshold: int = 50,
     ):
-        """
-        Initialize short-term memory.
-
-        Args:
-            host: Redis server host
-            port: Redis server port
-            db: Redis database number (different from cache)
-            password: Redis password
-            ttl_hours: TTL in hours for individual items
-            max_messages: Maximum messages to keep in list
-            migration_threshold: Number of messages before triggering migration
-        """
         self.host = host
         self.port = port
         self.db = db
@@ -53,10 +42,8 @@ class ShortTermMemory:
         self.max_messages = max_messages
         self.migration_threshold = migration_threshold
 
-        # Use Redis cache infrastructure with optimized serialization
         self._redis = get_cache_with_format(SerializationFormat.MSGPACK)
         if not self._redis:
-            # Fallback to direct Redis connection with MessagePack
             self._redis = RedisCache(
                 host=host,
                 port=port,
@@ -66,25 +53,38 @@ class ShortTermMemory:
                 ttl_hours=ttl_hours,
             )
 
-        # Memory-specific namespaces (user-aware keys)
         self._user_id: str | None = None
         self._message_list_key = "memory:short_term:messages"
         self._facts_key = "memory:short_term:facts"
         self._summary_key = "memory:short_term:summary"
 
+    # ------------------------------------------------------------------
+    # Key resolution (per-user isolation)
+    # ------------------------------------------------------------------
+    def _resolve_key(self, base: str, user_id: str | None) -> str:
+        uid = user_id or self._user_id
+        if uid:
+            return f"{base}:{uid}"
+        return base
+
+    def _msg_key(self, user_id: str | None = None) -> str:
+        return self._resolve_key("memory:short_term:messages", user_id)
+
+    def _facts_key_for(self, user_id: str | None = None) -> str:
+        return self._resolve_key("memory:short_term:facts", user_id)
+
+    def _summary_key_for(self, user_id: str | None = None) -> str:
+        return self._resolve_key("memory:short_term:summary", user_id)
+
     def set_user_context(self, user_id: str) -> None:
-        """Set user context to isolate memory per user."""
+        """Legacy mutable mode — prefer passing user_id explicitly to each method."""
         self._user_id = user_id
         self._message_list_key = f"memory:short_term:messages:{user_id}"
         self._facts_key = f"memory:short_term:facts:{user_id}"
         self._summary_key = f"memory:short_term:summary:{user_id}"
-
-        logger.info(
-            "Set user context %s — TTL=%sh, max_messages=%d", user_id, self.ttl_hours, self.max_messages
-        )
+        logger.info("Set user context %s — TTL=%sh, max_messages=%d", user_id, self.ttl_hours, self.max_messages)
 
     def _serialize_memory_item(self, item: dict[str, Any]) -> str:
-        """Serialize memory item with metadata using MessagePack."""
         memory_item = {
             "timestamp": time.time(),
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -94,11 +94,9 @@ class ShortTermMemory:
             "access_count": 0,
             "last_accessed": time.time(),
         }
-        # Use the Redis cache's serialization manager
         return self._redis._serialize(memory_item)
 
     def _deserialize_memory_item(self, data: str) -> dict[str, Any] | None:
-        """Deserialize memory item using MessagePack."""
         try:
             return self._redis._deserialize(data)
         except Exception as e:
@@ -111,19 +109,8 @@ class ShortTermMemory:
         agent_response: str,
         context: dict[str, Any] | None = None,
         confidence: float = 0.5,
+        user_id: str | None = None,
     ) -> bool:
-        """
-        Add user interaction to short-term memory.
-
-        Args:
-            user_query: User's question/query
-            agent_response: Agent's response
-            context: Additional context (parsed query, etc.)
-            confidence: Confidence score for the interaction
-
-        Returns:
-            True if successful, False otherwise
-        """
         interaction = {
             "type": "interaction",
             "user_query": user_query,
@@ -132,76 +119,42 @@ class ShortTermMemory:
             "confidence": confidence,
             "timestamp": time.time(),
         }
-
         try:
-            # Add to message list (FIFO with LTRIM)
+            msg_key = self._msg_key(user_id)
             serialized = self._serialize_memory_item(interaction)
-            result = self._redis.list_push(self._message_list_key, serialized)
-
+            result = self._redis.list_push(msg_key, serialized)
             if result:
-                # Trim list to max_messages
-                self._redis.list_trim(self._message_list_key, 0, self.max_messages - 1)
-
-                # Set TTL for the list itself
-                self._redis.expire(self._message_list_key, self.ttl_hours)
-
-                # Check if migration is needed
-                self._check_migration_trigger()
-
-                logger.debug(
-                    f"Added interaction to short-term memory (confidence: {confidence:.2f})"
-                )
+                self._redis.list_trim(msg_key, 0, self.max_messages - 1)
+                self._redis.expire(msg_key, self.ttl_hours)
+                self._check_migration_trigger(user_id=user_id)
+                logger.debug(f"Added interaction to short-term memory (user={user_id or self._user_id}, confidence: {confidence:.2f})")
                 return True
-
             return False
-
         except RedisError as e:
             logger.error(f"Failed to add interaction to short-term memory: {e}")
             return False
 
-    def get_recent_interactions(self, limit: int = 10) -> list[dict[str, Any]]:
-        """
-        Get recent interactions from short-term memory.
-
-        Args:
-            limit: Maximum number of interactions to return
-
-        Returns:
-            List of recent interactions
-        """
+    def get_recent_interactions(self, limit: int = 10, user_id: str | None = None) -> list[dict[str, Any]]:
         try:
-            messages_data = self._redis.list_range(self._message_list_key, 0, limit - 1)
-
+            msg_key = self._msg_key(user_id)
+            messages_data = self._redis.list_range(msg_key, 0, limit - 1)
             interactions = []
             for msg_data in messages_data:
                 item = self._deserialize_memory_item(msg_data)
                 if item and item.get("content", {}).get("type") == "interaction":
                     interactions.append(item["content"])
-
-            # Update access counts
             if interactions:
-                self._update_access_counts(interactions)
-
+                self._update_access_counts(interactions, user_id=user_id)
             return interactions
-
         except RedisError as e:
             logger.error(f"Failed to get recent interactions: {e}")
             return []
 
-    def get_facts(self, fact_types: list[str] | None = None) -> dict[str, Any]:
-        """
-        Get facts from short-term memory.
-
-        Args:
-            fact_types: List of fact types to retrieve (None for all)
-
-        Returns:
-            Dictionary of facts
-        """
+    def get_facts(self, fact_types: list[str] | None = None, user_id: str | None = None) -> dict[str, Any]:
         try:
+            facts_key = self._facts_key_for(user_id)
             if fact_types:
-                # Get specific fact types
-                facts_data = self._redis.hash_multi_get(self._facts_key, fact_types)
+                facts_data = self._redis.hash_multi_get(facts_key, fact_types)
                 facts = {}
                 for i, fact_type in enumerate(fact_types):
                     if facts_data[i]:
@@ -209,89 +162,69 @@ class ShortTermMemory:
                         if item:
                             facts[fact_type] = item["content"]
             else:
-                # Get all facts
-                facts_data = self._redis.hash_get_all(self._facts_key)
+                facts_data = self._redis.hash_get_all(facts_key)
                 facts = {}
                 for fact_type, fact_data in facts_data.items():
                     item = self._deserialize_memory_item(fact_data)
                     if item:
                         facts[fact_type] = item["content"]
-
-            # Update access counts
             if facts:
                 fact_keys = list(facts.keys())
-                self._update_access_counts(list(facts.values()), fact_keys)
-
+                self._update_access_counts(list(facts.values()), fact_keys, user_id=user_id)
             return facts
-
         except RedisError as e:
             logger.error(f"Failed to get facts: {e}")
             return {}
 
     def _update_access_counts(
-        self, items: list[dict[str, Any]], keys: list[str] | None = None
+        self, items: list[dict[str, Any]], keys: list[str] | None = None, user_id: str | None = None
     ) -> None:
-        """Update access counts for hash-stored items (facts)."""
         try:
             if keys and len(keys) == len(items):
+                facts_key = self._facts_key_for(user_id)
                 for i in range(len(items)):
-                    raw = self._redis.hash_multi_get(self._facts_key, [keys[i]])
+                    raw = self._redis.hash_multi_get(facts_key, [keys[i]])
                     if raw and raw[0]:
                         full = self._deserialize_memory_item(raw[0])
                         if full:
                             full["access_count"] = full.get("access_count", 0) + 1
                             full["last_accessed"] = time.time()
                             updated = self._redis._serialize(full)
-                            self._redis.hash_set(self._facts_key, keys[i], updated)
+                            self._redis.hash_set(facts_key, keys[i], updated)
         except RedisError as e:
             logger.error(f"Failed to update access counts: {e}")
 
-    def _check_migration_trigger(self) -> None:
-        """Check if migration to episodic memory is needed."""
+    def _check_migration_trigger(self, user_id: str | None = None) -> None:
         try:
-            message_count = self._redis.list_length(self._message_list_key)
-
+            msg_key = self._msg_key(user_id)
+            message_count = self._redis.list_length(msg_key)
             if message_count >= self.migration_threshold:
-                logger.info(
-                    f"Migration threshold reached ({message_count} messages), triggering migration"
-                )
-                # Note: Actual migration would be handled by MemoryManager
-                # This is just a trigger mechanism
-
+                logger.info(f"Migration threshold reached ({message_count} messages, user={user_id or self._user_id}), triggering migration")
         except RedisError as e:
             logger.error(f"Failed to check migration trigger: {e}")
 
-    def cleanup_expired(self) -> int:
-        """
-        Clean up expired items and return count of cleaned items.
-
-        Returns:
-            Number of items cleaned up
-        """
+    def cleanup_expired(self, user_id: str | None = None) -> int:
         try:
             cleaned = 0
-
-            # Clean up old messages beyond max_messages
-            current_count = self._redis.list_length(self._message_list_key)
+            msg_key = self._msg_key(user_id)
+            current_count = self._redis.list_length(msg_key)
             if current_count > self.max_messages:
-                # Remove excess messages from the end
-                self._redis.list_trim(self._message_list_key, 0, self.max_messages - 1)
+                self._redis.list_trim(msg_key, 0, self.max_messages - 1)
                 cleaned += current_count - self.max_messages
-
             return cleaned
-
         except RedisError as e:
             logger.error(f"Failed to cleanup expired items: {e}")
             return 0
 
-    def get_stats(self) -> dict[str, Any]:
-        """Get short-term memory statistics."""
+    def get_stats(self, user_id: str | None = None) -> dict[str, Any]:
         try:
-            message_count = self._redis.list_length(self._message_list_key)
-            fact_count = self._redis.hash_length(self._facts_key)
-
+            msg_key = self._msg_key(user_id)
+            facts_key = self._facts_key_for(user_id)
+            message_count = self._redis.list_length(msg_key)
+            fact_count = self._redis.hash_length(facts_key)
             return {
                 "memory_type": "short_term",
+                "user_id": user_id or self._user_id,
                 "message_count": message_count,
                 "fact_count": fact_count,
                 "max_messages": self.max_messages,
@@ -299,29 +232,27 @@ class ShortTermMemory:
                 "migration_threshold": self.migration_threshold,
                 "redis_info": self._redis.info(),
             }
-
         except RedisError as e:
             logger.error(f"Failed to get stats: {e}")
             return {"error": str(e)}
 
-    def clear(self) -> bool:
-        """Clear all short-term memory."""
+    def clear(self, user_id: str | None = None) -> bool:
         try:
-            result = self._redis.delete_multi(
-                [
-                    self._message_list_key,
-                    self._facts_key,
-                ]
-            )
-            logger.info("Cleared short-term memory")
+            # If user_id specified, clear only that user's keys. If None and legacy _user_id set, clear that. If both None, clear global.
+            if user_id:
+                msg_key = f"memory:short_term:messages:{user_id}"
+                facts_key = f"memory:short_term:facts:{user_id}"
+                summary_key = f"memory:short_term:summary:{user_id}"
+                result = self._redis.delete_multi([msg_key, facts_key, summary_key])
+            else:
+                result = self._redis.delete_multi([self._message_list_key, self._facts_key, self._summary_key])
+            logger.info("Cleared short-term memory (user=%s)", user_id or self._user_id or "global")
             return result
-
         except RedisError as e:
             logger.error(f"Failed to clear short-term memory: {e}")
             return False
 
     def close(self) -> None:
-        """Close Redis connection."""
         if self._redis:
             self._redis.close()
         logger.info("Short-term memory closed")

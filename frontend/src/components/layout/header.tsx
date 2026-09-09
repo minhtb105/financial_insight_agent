@@ -6,18 +6,21 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { LayoutDashboard, MessageCircle, Activity, LogOut, TrendingUp } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 
-const NAV = [
-  { href: "/chat", label: "Trò chuyện", icon: MessageCircle },
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/traces", label: "Traces", icon: Activity },
+const NAV_ALL = [
+  { href: "/chat", label: "Trò chuyện", icon: MessageCircle, roles: ["user", "admin"] },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["user", "admin"] },
+  { href: "/traces", label: "Traces", icon: Activity, roles: ["admin"] },
 ]
 
 export function Header() {
   const pathname = usePathname()
   const { data: session, status } = useSession()
   const [health, setHealth] = useState<"ok" | "down" | "loading">("loading")
+
+  const role = (session?.user as unknown as { role?: string })?.role || "user"
+  const nav = useMemo(() => NAV_ALL.filter((n) => n.roles.includes(role)), [role])
 
   useEffect(() => {
     let cancelled = false
@@ -56,7 +59,7 @@ export function Header() {
           </Link>
           {status === "authenticated" && (
             <nav className="hidden md:flex items-center gap-1">
-              {NAV.map((item) => {
+              {nav.map((item) => {
                 const active = pathname?.startsWith(item.href)
                 return (
                   <Link key={item.href} href={item.href} className={cn("inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors", active ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground")}>
@@ -76,6 +79,7 @@ export function Header() {
           {status === "authenticated" ? (
             <>
               <span className="hidden sm:inline text-sm text-muted-foreground">{session.user?.name ?? session.user?.email}</span>
+              {role === "admin" && <Badge variant="secondary" className="hidden sm:inline-flex">Admin</Badge>}
               <Button variant="ghost" size="sm" onClick={() => signOut({ callbackUrl: "/login" })}>
                 <LogOut className="h-4 w-4" /> Đăng xuất
               </Button>
@@ -88,7 +92,7 @@ export function Header() {
       {status === "authenticated" && (
         <div className="md:hidden border-t bg-background">
           <nav className="flex items-center justify-around px-2 py-1">
-            {NAV.map((item) => {
+            {nav.map((item) => {
               const active = pathname?.startsWith(item.href)
               return (
                 <Link key={item.href} href={item.href} className={cn("flex flex-col items-center gap-1 rounded-md px-3 py-1.5 text-xs", active ? "text-primary bg-accent" : "text-muted-foreground")}>

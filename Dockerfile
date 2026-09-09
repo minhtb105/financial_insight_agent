@@ -2,9 +2,10 @@ ARG PYTHON_VERSION=3.13
 FROM python:${PYTHON_VERSION}-slim AS base
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
-COPY pyproject.toml README.md ./
+RUN apt-get update && apt-get install -y --no-install-recommends curl postgresql-client && rm -rf /var/lib/apt/lists/*
+COPY pyproject.toml README.md alembic.ini ./
 COPY src ./src
+COPY alembic ./alembic
 RUN pip install --upgrade pip && pip install -e .
 
 FROM base AS production

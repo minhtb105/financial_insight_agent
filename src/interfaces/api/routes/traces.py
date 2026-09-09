@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from typing import Any, Literal, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from infrastructure.auth.dependencies import get_current_admin_user
+from infrastructure.db.models.user import User
 from infrastructure.observability.tracing import get_tracer
 
 router = APIRouter(prefix="/traces", tags=["observability"])
@@ -58,6 +60,7 @@ async def list_traces(
     status: Optional[Literal["ok", "error", "running"]] = None,
     min_duration_ms: Optional[float] = Query(None, ge=0),
     name_filter: Optional[str] = Query(None, max_length=100),
+    _admin: User = Depends(get_current_admin_user),
 ):
     store, _tracer = _get_store()
     if store is None:
@@ -85,7 +88,7 @@ async def list_traces(
     summary="Chi tiết một trace",
     description="Trả về toàn bộ span tree của một trace theo trace_id.",
 )
-async def get_trace(trace_id: str):
+async def get_trace(trace_id: str, _admin: User = Depends(get_current_admin_user)):
     store, _tracer = _get_store()
     if store is None:
         raise HTTPException(status_code=503, detail="Tracing is disabled")

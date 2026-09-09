@@ -92,6 +92,26 @@ ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http:
 ENABLE_RAG_SCHEDULER: bool = _get_bool("ENABLE_RAG_SCHEDULER", True)
 ADMIN_API_KEY: str | None = os.getenv("ADMIN_API_KEY")
 
+# Database (Postgres primary, SQLite fallback for local dev without Docker)
+DATABASE_URL: str = os.getenv(
+    "DATABASE_URL",
+    "postgresql+asyncpg://finsight:finsight@localhost:5432/finsight",
+)
+# Sync URL for alembic (psycopg2)
+DATABASE_SYNC_URL: str = os.getenv(
+    "DATABASE_SYNC_URL",
+    DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://").replace("sqlite+aiosqlite://", "sqlite://"),
+)
+
+# Auth / JWT
+JWT_SECRET: str = os.getenv("JWT_SECRET") or os.getenv("NEXTAUTH_SECRET") or "finsight-dev-secret-change-me-in-prod"
+JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
+JWT_EXPIRE_MINUTES: int = _get_int("JWT_EXPIRE_MINUTES", 60)
+# Admin seed (created on startup if not exists)
+ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL", "admin@finsight.vn")
+ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "admin123")
+ADMIN_NAME: str = os.getenv("ADMIN_NAME", "Admin")
+
 # NextAuth / Frontend
 NEXTAUTH_SECRET: str | None = os.getenv("NEXTAUTH_SECRET")
 NEXTAUTH_URL: str = os.getenv("NEXTAUTH_URL", "http://localhost:3000")

@@ -2,6 +2,7 @@
 import { useState } from "react"
 import { signIn } from "next-auth/react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import { z } from "zod"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -32,7 +33,7 @@ export default function LoginPage() {
     const res = await signIn("credentials", { email, password, redirect: false })
     setLoading(false)
     if (res?.error) {
-      setError("Email hoặc mật khẩu không đúng. Thử demo@finsight.vn / demo123")
+      setError("Email hoặc mật khẩu không đúng. Kiểm tra lại hoặc đăng ký tài khoản mới.")
     } else if (res?.ok) {
       router.push("/chat")
     }
@@ -43,7 +44,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl">Đăng nhập</CardTitle>
-          <CardDescription>Nhập tài khoản demo để trải nghiệm. Lịch sử chat được lưu theo tài khoản.</CardDescription>
+          <CardDescription>Đăng nhập để trò chuyện. Mỗi tài khoản có bộ nhớ & lịch sử riêng.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -58,10 +59,13 @@ export default function LoginPage() {
             {error && <p className="text-sm text-destructive">{error}</p>}
             <Button type="submit" className="w-full" disabled={loading}>{loading ? "Đang đăng nhập..." : "Đăng nhập"}</Button>
           </form>
-          <div className="mt-6 rounded-lg bg-muted p-3 text-xs">
-            <p className="font-medium mb-1">Tài khoản demo:</p>
-            <p>• demo@finsight.vn / demo123</p>
-            <p>• admin@finsight.vn / admin123</p>
+          <div className="mt-4 text-center text-sm">
+            Chưa có tài khoản? <Link href="/signup" className="text-primary hover:underline">Đăng ký</Link>
+          </div>
+          <div className="mt-4 rounded-lg bg-muted p-3 text-xs">
+            <p className="font-medium mb-1">Tài khoản mặc định:</p>
+            <p>• demo@finsight.vn / demo123 (user)</p>
+            <p>• admin@finsight.vn / admin123 (admin — xem được Traces)</p>
           </div>
         </CardContent>
       </Card>

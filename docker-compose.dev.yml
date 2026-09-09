@@ -35,6 +35,45 @@ services:
     networks:
       - finsight-network
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: finsight-postgres-dev
+    ports:
+      - "${POSTGRES_EXTERNAL_PORT:-5432}:5432"
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-finsight}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-finsight}
+      - POSTGRES_DB=${POSTGRES_DB:-finsight}
+    volumes:
+      - postgres_storage_dev:/var/lib/postgresql/data
+    networks:
+      - finsight-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-finsight} -d ${POSTGRES_DB:-finsight}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    container_name: finsight-redis-dev
+    ports:
+      - "${REDIS_EXTERNAL_PORT:-6379}:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_storage_dev:/data
+    networks:
+      - finsight-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   backend:
     build:
       context: .
@@ -63,9 +102,21 @@ services:
       - QDRANT_HOST=${QDRANT_HOST:-qdrant}
       - QDRANT_PORT=${QDRANT_PORT:-6333}
       - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-finsight}:${POSTGRES_PASSWORD:-finsight}@postgres:5432/${POSTGRES_DB:-finsight}
+      - DATABASE_SYNC_URL=postgresql://${POSTGRES_USER:-finsight}:${POSTGRES_PASSWORD:-finsight}@postgres:5432/${POSTGRES_DB:-finsight}
+      - JWT_SECRET=${JWT_SECRET:-}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - JWT_EXPIRE_MINUTES=${JWT_EXPIRE_MINUTES:-60}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@finsight.vn}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      - ADMIN_NAME=${ADMIN_NAME:-Admin}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
     volumes:
       - ./src:/app/src:cached
       - ./frontend:/app/frontend:cached
+      - ./alembic:/app/alembic:cached
+      - ./alembic.ini:/app/alembic.ini:cached
       - /app/src/__pycache__
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${APP_PORT:-8000}/health"]
@@ -74,6 +125,10 @@ services:
       retries: 3
       start_period: 40s
     depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
       mcp_server:
         condition: service_healthy
       qdrant:
@@ -127,3 +182,5 @@ networks:
 
 volumes:
   qdrant_storage_dev:
+  postgres_storage_dev:
+  redis_storage_dev:

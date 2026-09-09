@@ -1,4 +1,6 @@
 import { NextRequest } from "next/server"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/auth"
 import { getBackendUrl } from "@/lib/backend"
 
 export const dynamic = "force-dynamic"
@@ -11,12 +13,18 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ detail: "Query rỗng" }), { status: 400, headers: { "Content-Type": "application/json" } })
   }
 
+  const session = await getServerSession(authOptions)
+  const token = (session as unknown as { accessToken?: string })?.accessToken || (session?.user as unknown as { accessToken?: string })?.accessToken
+  if (!token) {
+    return new Response(JSON.stringify({ detail: "Chưa đăng nhập" }), { status: 401, headers: { "Content-Type": "application/json" } })
+  }
+
   const target = `${getBackendUrl()}/api/v1/ask-stream`
 
   // Forward to FastAPI and proxy SSE
   const upstream = await fetch(target, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ query }),
   })
 
