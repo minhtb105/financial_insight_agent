@@ -32,6 +32,9 @@ _FALLBACK_ROWS: list[dict[str, Any]] = [
     {"time": "2026-03-02", "close": 62.1},
 ]
 
+_CATEGORICAL_TYPES = frozenset({"pie", "donut", "treemap", "heatmap", "bar"})
+_SCATTER_X_CANDIDATES = ("risk", "pe")
+
 
 def _fetch_rows(
     symbols: list[str], metric: str, months: int | None, days: int | None
@@ -48,7 +51,7 @@ def _fetch_rows(
             for item in entry.get("data", [])[:180]:
                 if not isinstance(item, dict):
                     continue
-                row: dict[str, Any] = {"time": item.get("date")}
+                row: dict[str, Any] = {"time": item.get("date"), "symbol": ticker}
                 if item.get("open_price") is not None:
                     row["open"] = item["open_price"]
                 if item.get("high") is not None:
@@ -76,13 +79,31 @@ def _rule_pick(user_request: str, hint: ChartHint | None, metric: str, symbols: 
         return "heatmap"
     if any(k in q for k in ("tỷ trọng", "cơ cấu", "danh mục", "allocation", "pie", "treemap")):
         return "treemap" if len(symbols) > 7 else "pie"
-    if any(k in q for k in ("waterfall", "doanh thu", "chi phí", "lợi nhuận")):
-        return "waterfall"
+    # Scatter trước waterfall: cặp "rủi ro-lợi nhuận"/risk-return nói rõ ý định hơn từ "lợi nhuận" chung chung.
     if any(k in q for k in ("scatter", "risk", "return", "rủi ro")):
         return "scatter"
+    if any(k in q for k in ("vùng", "area", "tích lũy")):
+        return "area"
+    if any(k in q for k in ("waterfall", "doanh thu", "chi phí", "lợi nhuận")):
+        return "waterfall"
     if any(k in q for k in ("so sánh", "compare", "p/e", "roe")):
         return "bar"
     return "candlestick" if metric in ("ohlc", "open", "high", "low") else "line"
+
+
+def _pick_x_field(chart_type: str, first_row: dict[str, Any], n_symbols: int) -> str:
+    """Chọn trục X theo loại chart: categorical → symbol, scatter → risk/pe, còn lại → time."""
+    cols = set(first_row.keys())
+    single_bar = chart_type == "bar" and n_symbols <= 1
+    if chart_type in _CATEGORICAL_TYPES and not single_bar and "symbol" in cols:
+        return "symbol"
+    if chart_type == "scatter":
+        for cand in _SCATTER_X_CANDIDATES:
+            if cand in cols:
+                return cand
+    if "time" in cols:
+        return "time"
+    return next(iter(first_row.keys()))
 
 
 @mcp.tool(
@@ -91,6 +112,8 @@ def _rule_pick(user_request: str, hint: ChartHint | None, metric: str, symbols: 
         "Sinh JSON chart-spec để vẽ dashboard BÊN NGOÀI khung chat. "
         "GỌI khi user nói: vẽ/vẽ biểu đồ/so sánh trực quan/tỷ trọng/tương quan/xem xu hướng. "
         "KHÔNG gọi khi user chỉ hỏi con số/text. "
+        "Nếu thiếu mã/thông tin cần thiết để vẽ (không có symbols), KHÔNG đoán bừa — "
+        "hãy hỏi lại user trước khi gọi tool. "
         "Trả về JSON {spec, data_source} — KHÔNG sinh code Python/JS. "
         "Mọi số liệu phải từ vnstock tools, kèm citation [TICKER: value, nguồn: generate_chart_spec]."
     ),
@@ -111,7 +134,7 @@ def generate_chart_spec(
         chart_type = _rule_pick(user_request, chart_type_hint, metric, tickers)
         rows, source = _fetch_rows(tickers, metric, months, days)
         first = rows[0]
-        x_field = "time" if ("time" in first or "date" in first) else next(iter(first.keys()))
+        x_field = _pick_x_field(chart_type, first, len(tickers))
         if x_field == "date":
             for r in rows:
                 r["time"] = r.pop("date")

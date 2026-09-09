@@ -100,6 +100,19 @@ python evals/compare_reports.py evals/reports/<baseline> evals/reports/<candidat
 
 Exit code 1 nếu bất kỳ metric nào tụt quá ngưỡng → dùng làm gate CI khi đổi prompt version.
 
+## Dashboard eval (text-to-dashboard, không tốn LLM judge)
+
+```bash
+python evals/run_dashboard_eval.py                    # full 102 cases (90 tool-level + 12 adversarial manual)
+python evals/run_dashboard_eval.py --limit 10         # smoke
+python evals/run_dashboard_eval.py --check            # exit 1 nếu dưới ngưỡng
+python evals/run_dashboard_eval.py --report-out evals/dashboard/v1/report.json
+```
+
+- Dataset: `evals/dashboard/v1/benchmark.jsonl` — 90 câu (9 nhóm chart × explicit/semantic/analytic) + 12 adversarial (`ask_back: true`, check tay ở tầng agent).
+- Metrics (rule-based trên JSON, theo khung VisEval): Validity → Legality (`chart_type`/`x`/`y`/`sort` so trực tiếp) → Readability (1-5) → Quality (0 nếu invalid/illegal).
+- Ngưỡng: Validity ≥ 90%, `chart_type` ≥ 85%, field ≥ 80%. Mock `_fetch_rows` (không gọi vnstock) để đo đúng selector + validator.
+
 ## Chi phí
 
 ~36 cases × (agent loop ≈ 3-5 LLM calls + 4 judge calls) ≈ vài trăm nghìn token/run với gpt-4o-mini. Dùng `--limit`/`--ids` để kiểm soát.
