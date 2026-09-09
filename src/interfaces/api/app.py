@@ -95,6 +95,10 @@ class QueryRequest(BaseModel):
         max_length=_MAX_QUERY_LENGTH,
         description="Vietnamese stock market question",
     )
+    activeChartSpec: dict | None = Field(
+        default=None,
+        description="ChartSpec đang pinned ở DashboardPanel (để follow-up về chart)",
+    )
 
 
 class QueryResponse(BaseModel):
@@ -137,6 +141,17 @@ def _build_error(detail: str, error_type: str, request_id: str, status_code: int
 def _sse_error_event(detail: str, error_type: str, request_id: str) -> str:
     err = ErrorResponse(detail=detail, error_type=error_type, request_id=request_id)
     return f"event: error\ndata: {err.model_dump_json()}\n\ndata: [DONE]\n\n"
+
+
+def _sse_chart_spec_event(spec_json: str, request_id: str) -> str:
+    payload = {"request_id": request_id, "spec": spec_json}
+    import json as _json
+
+    return f"event: chart_spec\ndata: {_json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _sse_chart_error_event(detail: str, request_id: str) -> str:
+    return f"event: chart_error\ndata: [{request_id}] {detail[:500]}\n\n"
 
 
 # ---------------------------------------------------------------------------
