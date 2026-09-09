@@ -38,3 +38,7 @@ src/financial_insight_agent.egg-info/
 data/
 evals/reports/
 user_portfolio_default.json
+
+# Understand Anything graph artifacts (generated)
+.ua/
+.understand-anything/
