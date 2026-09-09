@@ -21,6 +21,12 @@ from infrastructure.cache.serialization import SerializationFormat
 logger = logging.getLogger(__name__)
 
 
+# Default sliding-window size (k most recent turns) for Reformulation input.
+DEFAULT_WINDOW_SIZE = 5
+# Cap for merged summary entities / topics.
+MAX_SUMMARY_ITEMS = 20
+
+
 class ShortTermMemory:
     """Redis-based short-term memory with automatic migration."""
 
@@ -152,6 +158,127 @@ class ShortTermMemory:
         except RedisError as e:
             logger.error(f"Failed to get recent interactions: {e}")
             return []
+
+    # ------------------------------------------------------------------
+    # Working memory — last-turn payload for question Reformulation
+    # ------------------------------------------------------------------
+    def get_last_turn(self, user_id: str | None = None) -> dict[str, Any] | None:
+        """Return the most recent interaction turn, or None when no history."""
+        turns = self.get_last_k_turns(k=1, user_id=user_id)
+        return turns[0] if turns else None
+
+    def get_last_k_turns(self, k: int = DEFAULT_WINDOW_SIZE, user_id: str | None = None) -> list[dict[str, Any]]:
+        """Sliding window: k most recent interaction turns, chronological (oldest -> newest).
+
+        Redis list uses LPUSH so index 0 is the newest; the result is reversed
+        so Reformulation receives turns in conversation order.
+        """
+        if k <= 0:
+            return []
+        try:
+            msg_key = self._msg_key(user_id)
+            messages_data = self._redis.list_range(msg_key, 0, k - 1)
+            turns = []
+            for msg_data in messages_data:
+                item = self._deserialize_memory_item(msg_data)
+                if item and item.get("content", {}).get("type") == "interaction":
+                    turns.append(item["content"])
+            turns.reverse()
+            return turns
+        except RedisError as e:
+            logger.error(f"Failed to get last {k} turns: {e}")
+            return []
+
+    def build_working_payload(
+        self, current_raw_query: str, user_id: str | None = None
+    ) -> dict[str, Any]:
+        """Build the (q_{t-1}, r_{t-1}, q_t) triple for question reformulation.
+
+        Returns {"turn_id", "previous_user_query", "previous_system_response",
+        "current_raw_query"}. Empty history yields empty strings + turn_id None.
+        """
+        last = self.get_last_turn(user_id=user_id)
+        if not last:
+            return {
+                "turn_id": None,
+                "previous_user_query": "",
+                "previous_system_response": "",
+                "current_raw_query": current_raw_query,
+            }
+        ts = last.get("timestamp")
+        if isinstance(ts, (int, float)):
+            turn_id: str | None = str(int(ts))
+        elif ts is not None:
+            turn_id = str(ts)
+        else:
+            turn_id = None
+        return {
+            "turn_id": turn_id,
+            "previous_user_query": last.get("user_query", ""),
+            "previous_system_response": last.get("agent_response", ""),
+            "current_raw_query": current_raw_query,
+        }
+
+    # ------------------------------------------------------------------
+    # Summary state — entities / topics for Reformulation
+    # ------------------------------------------------------------------
+    def get_summary(self, user_id: str | None = None) -> dict[str, Any]:
+        """Return conversation summary state {entities, topics, updated_at}."""
+        try:
+            summary_key = self._summary_key_for(user_id)
+            data = self._redis.hash_get_all(summary_key)
+            raw = data.get("state")
+            if not raw:
+                return {"entities": [], "topics": [], "updated_at": None}
+            item = self._deserialize_memory_item(raw)
+            if not item:
+                return {"entities": [], "topics": [], "updated_at": None}
+            content = item.get("content", {})
+            return {
+                "entities": list(content.get("entities", [])),
+                "topics": list(content.get("topics", [])),
+                "updated_at": content.get("updated_at"),
+            }
+        except RedisError as e:
+            logger.error(f"Failed to get summary: {e}")
+            return {"entities": [], "topics": [], "updated_at": None}
+
+    def update_summary(
+        self,
+        user_id: str | None = None,
+        entities: list[str] | None = None,
+        topics: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Merge entities/topics into the summary state (union, capped).
+
+        The LLM summarization itself lives in the Reformulation step;
+        memory only stores and merges the extracted lists.
+        """
+        try:
+            current = self.get_summary(user_id=user_id)
+            merged_entities = list(dict.fromkeys([*current["entities"], *(entities or [])]))[
+                -MAX_SUMMARY_ITEMS:
+            ]
+            merged_topics = list(dict.fromkeys([*current["topics"], *(topics or [])]))[
+                -MAX_SUMMARY_ITEMS:
+            ]
+            state = {
+                "type": "summary",
+                "entities": merged_entities,
+                "topics": merged_topics,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            summary_key = self._summary_key_for(user_id)
+            self._redis.hash_set(summary_key, "state", self._serialize_memory_item(state))
+            self._redis.expire(summary_key, self.ttl_hours)
+            return {
+                "entities": merged_entities,
+                "topics": merged_topics,
+                "updated_at": state["updated_at"],
+            }
+        except RedisError as e:
+            logger.error(f"Failed to update summary: {e}")
+            return {"entities": [], "topics": [], "updated_at": None}
 
     def get_facts(self, fact_types: list[str] | None = None, user_id: str | None = None) -> dict[str, Any]:
         try:

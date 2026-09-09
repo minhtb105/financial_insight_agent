@@ -26,12 +26,16 @@ class MemoryResponse(BaseModel):
 )
 async def get_my_memory(
     top_k: int = Query(10, ge=1, le=50),
+    tiers: str | None = Query(
+        None, description="Comma-separated tiers: short_term,working,sliding,episodic"
+    ),
     current_user: User = Depends(get_current_user),
 ):
     mgr = get_memory_manager()
     if mgr is None:
         return MemoryResponse(user_id=current_user.id, memory={})
-    data = mgr.search_memory(query="", top_k=top_k, user_id=current_user.id)
+    memory_tiers = [t.strip() for t in tiers.split(",") if t.strip()] if tiers else None
+    data = mgr.search_memory(query="", top_k=top_k, memory_tiers=memory_tiers, user_id=current_user.id)
     return MemoryResponse(user_id=current_user.id, memory=data)
 
 
