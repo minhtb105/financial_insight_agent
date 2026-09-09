@@ -432,7 +432,7 @@ async def ask_stock_agent_stream(
 
                 def _produce():
                     try:
-                        for chunk in agent.run_stream(body.query, request_id=request_id, user_id=current_user.id):
+                        for chunk in agent.run_stream(body.query, request_id=request_id, user_id=current_user.id, active_chart_spec=body.activeChartSpec):
                             if cancel_event.is_set():
                                 return
                             try:

@@ -54,10 +54,36 @@ class AgentState(TypedDict):
     original_query: str
     request_id: str
     memory_context: str
+    active_chart_spec: str | None  # compact dashboard summary (P4) — None khi không có chart pinned
     tool_call_history: list[str]
     tool_call_cache: dict[str, str]
     tool_call_retries: dict[str, int]
     next_tool_call: Optional[list]  # explicit handoff: reason_node → action_node
+
+
+def _summarize_chart_spec(spec: object) -> str | None:
+    """Tóm tắt ChartSpec đang pinned thành 1-2 dòng cho system prompt.
+
+    Trả None khi spec rỗng/sai shape để caller bỏ qua êm (không crash stream).
+    """
+    if not isinstance(spec, dict):
+        return None
+    chart_type = spec.get("chart_type")
+    if not chart_type:
+        return None
+    title = str(spec.get("title", ""))[:120]
+    series = spec.get("series") or []
+    symbols = ",".join(str(s.get("name", "?")) for s in series if isinstance(s, dict))[:80]
+    x_field = spec.get("x_field", "?")
+    y_field = spec.get("y_field", "?")
+    data = spec.get("data")
+    rows = len(data) if isinstance(data, list) else "?"
+    source = str(spec.get("data_source", ""))[:120]
+    summary = (
+        f"Active dashboard: {chart_type} {title} | symbols {symbols or '?'} | "
+        f"x {x_field} / y {y_field} | {rows} rows | nguồn {source}"
+    )
+    return summary[:600]
 
 
 class StockAgent:
@@ -207,6 +233,21 @@ class StockAgent:
         temporal_ctx = self._build_temporal_context(messages, current_date)
         if temporal_ctx:
             messages.append(SystemMessage(content=temporal_ctx))
+
+        dashboard_ctx = state.get("active_chart_spec")
+        if dashboard_ctx:
+            messages.append(
+                SystemMessage(
+                    content=(
+                        "Dashboard đang hiển thị bên cạnh khung chat (user vẫn thấy nó):\n"
+                        f"{dashboard_ctx}\n"
+                        "Nếu câu hỏi tiếp theo dùng đại từ ('mã này', 'đoạn giảm đó', 'tháng 3') "
+                        "mà không nêu mã mới, hãy hiểu là hỏi về dashboard này. "
+                        "Dùng lại symbols/time_range của nó khi gọi tools, "
+                        "và chỉ gọi generate_chart_spec khi user muốn vẽ/đổi biểu đồ."
+                    )
+                )
+            )
 
         if not any(isinstance(m, SystemMessage) for m in messages):
             try:
@@ -500,7 +541,7 @@ class StockAgent:
             logger.warning("Failed to search memory", extra={"error": str(mem_err)})
             return ""
 
-    def _run_single(self, query: str, rid: str, memory_context: str = "", user_id: str | None = None) -> str:
+    def _run_single(self, query: str, rid: str, memory_context: str = "", user_id: str | None = None, active_chart_summary: str | None = None) -> str:
         with suppress(Exception):
             request_id_var.set(rid)
         tracer = get_tracer()
@@ -516,6 +557,7 @@ class StockAgent:
                 "original_query": query,
                 "request_id": rid,
                 "memory_context": memory_context,
+                "active_chart_spec": active_chart_summary,
                 "tool_call_history": [],
                 "tool_call_cache": {},
                 "tool_call_retries": {},
@@ -549,19 +591,20 @@ class StockAgent:
             with suppress(Exception):
                 request_id_var.set(None)
 
-    def _execute_graph(self, query: str, rid: str, trace_span=None, user_id: str | None = None) -> str:
+    def _execute_graph(self, query: str, rid: str, trace_span=None, user_id: str | None = None, active_chart_spec: dict | None = None) -> str:
         try:
             memory_context, sub_queries = self._prepare_and_split(query, user_id=user_id)
+            active_summary = _summarize_chart_spec(active_chart_spec)
 
             if trace_span is not None:
                 trace_span.attributes["num_sub_queries"] = len(sub_queries)
                 trace_span.attributes["sub_queries"] = sub_queries
 
             if len(sub_queries) <= 1:
-                result = self._run_single(query, rid, memory_context=memory_context, user_id=user_id)
+                result = self._run_single(query, rid, memory_context=memory_context, user_id=user_id, active_chart_summary=active_summary)
             else:
                 def _run_with_memory(q: str, r: str) -> str:
-                    return self._run_single(q, r, memory_context=memory_context, user_id=user_id)
+                    return self._run_single(q, r, memory_context=memory_context, user_id=user_id, active_chart_summary=active_summary)
                 merged = run_queries_parallel(
                     sub_queries=sub_queries,
                     request_id=rid,
@@ -580,6 +623,8 @@ class StockAgent:
                         context={
                             "sub_queries": sub_queries,
                             "request_id": rid,
+                            "has_active_chart": bool(active_summary),
+                            "active_chart": (active_summary or "")[:200],
                         },
                         user_id=user_id,
                     )
@@ -605,7 +650,7 @@ class StockAgent:
             return existing
         return str(uuid.uuid4())
 
-    def run(self, query: str, request_id: str | None = None, user_id: str | None = None) -> str:
+    def run(self, query: str, request_id: str | None = None, user_id: str | None = None, active_chart_spec: dict | None = None) -> str:
         rid = self._resolve_request_id(request_id)
         with suppress(Exception):
             request_id_var.set(rid)
@@ -617,10 +662,11 @@ class StockAgent:
             ) as span:
                 start_time = time.time()
                 try:
-                    result = self._execute_graph(query, rid, trace_span=span, user_id=user_id)
+                    result = self._execute_graph(query, rid, trace_span=span, user_id=user_id, active_chart_spec=active_chart_spec)
                     if span is not None:
                         span.outputs = {"answer": str(result)[:4000]}
                         span.attributes["user_id"] = user_id or "anonymous"
+                        span.attributes["has_active_chart"] = bool(active_chart_spec)
                     return result
                 finally:
                     latency = time.time() - start_time
@@ -635,7 +681,7 @@ class StockAgent:
             with suppress(Exception):
                 request_id_var.set(None)
 
-    def _run_single_stream(self, query: str, rid: str, memory_context: str = "", user_id: str | None = None):
+    def _run_single_stream(self, query: str, rid: str, memory_context: str = "", user_id: str | None = None, active_chart_summary: str | None = None):
         try:
             request_id_var.set(rid)
         except Exception as exc:
@@ -658,6 +704,7 @@ class StockAgent:
             "original_query": query,
             "request_id": rid,
             "memory_context": memory_context,
+            "active_chart_spec": active_chart_summary,
             "tool_call_history": [],
             "tool_call_cache": {},
             "tool_call_retries": {},
@@ -698,7 +745,7 @@ class StockAgent:
             )
             yield "Xin lỗi, đã xảy ra lỗi khi xử lý yêu cầu. Vui lòng thử lại sau."
 
-    def run_stream(self, query: str, request_id: str | None = None, user_id: str | None = None):
+    def run_stream(self, query: str, request_id: str | None = None, user_id: str | None = None, active_chart_spec: dict | None = None):
         rid = self._resolve_request_id(request_id)
         with suppress(Exception):
             request_id_var.set(rid)
@@ -711,14 +758,16 @@ class StockAgent:
                 start_time = time.time()
                 collected: list[str] = []
                 memory_context, sub_queries = self._prepare_and_split(query, user_id=user_id)
+                active_summary = _summarize_chart_spec(active_chart_spec)
                 if span is not None:
                     span.attributes["num_sub_queries"] = len(sub_queries)
                     span.attributes["sub_queries"] = sub_queries
                     span.attributes["user_id"] = user_id or "anonymous"
+                    span.attributes["has_active_chart"] = bool(active_summary)
 
                 if len(sub_queries) <= 1:
                     try:
-                        for token in self._run_single_stream(query, rid, memory_context=memory_context, user_id=user_id):
+                        for token in self._run_single_stream(query, rid, memory_context=memory_context, user_id=user_id, active_chart_summary=active_summary):
                             if token:
                                 collected.append(token)
                                 yield token
@@ -736,7 +785,7 @@ class StockAgent:
                         )
                         yield "Xin lỗi, đã xảy ra lỗi khi xử lý yêu cầu. Vui lòng thử lại sau."
                 else:
-                    result = self._execute_graph(query, rid, user_id=user_id)
+                    result = self._execute_graph(query, rid, user_id=user_id, active_chart_spec=active_chart_spec)
                     collected.append(result)
                     import re
                     _WORD_CHUNK_SIZE = 5
@@ -766,7 +815,12 @@ class StockAgent:
                             _mm.add_interaction(
                                 user_query=query,
                                 agent_response="".join(collected),
-                                context={"request_id": rid, "stream": True},
+                                context={
+                                    "request_id": rid,
+                                    "stream": True,
+                                    "has_active_chart": bool(active_summary),
+                                    "active_chart": (active_summary or "")[:200],
+                                },
                                 user_id=user_id,
                             )
                     except Exception as mem_err:
